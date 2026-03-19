@@ -1,0 +1,14 @@
+{
+  "name": "legalo-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LÉGALO - Plataforma legal con IA para Venezuela",
+  "scripts": {
+    "mobile": "cd mobile && npm start",
+    "admin": "cd admin && npm run dev",
+    "install:all": "npm install && cd mobile && npm install && cd ../admin && npm install"
+  },
+  "devDependencies": {
+    "pg": "^8.20.0"
+  }
+}

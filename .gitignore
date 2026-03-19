@@ -1,0 +1,38 @@
+# Env con credenciales (nunca subir)
+.env
+.env.local
+.env*.local
+
+# Dependencias
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Next.js
+.next/
+out/
+.vercel
+
+# Build
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Supabase temp
+supabase/.temp/
