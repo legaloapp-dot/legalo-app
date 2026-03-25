@@ -2,18 +2,21 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // NEXT_PUBLIC_* (recomendado) o sin prefijo — en Edge algunos equipos solo definen las del servidor
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+  const supabaseAnonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     console.error(
-      "[middleware] Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY en Vercel → Settings → Environment Variables"
+      "[middleware] Faltan URL/clave Supabase. En Vercel: NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY (o SUPABASE_URL + SUPABASE_ANON_KEY) para Production y Redeploy."
     );
     if (request.nextUrl.pathname.startsWith("/dashboard")) {
       return NextResponse.json(
         {
           error:
-            "Configuración incompleta: añade NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en Vercel.",
+            "Configuración incompleta: en Vercel → Environment Variables añade NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY (o SUPABASE_URL y SUPABASE_ANON_KEY), marca Production, guarda y Redeploy.",
         },
         { status: 503 }
       );
