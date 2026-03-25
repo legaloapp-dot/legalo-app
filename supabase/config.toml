@@ -1,0 +1,23 @@
+# Supabase - LÉGALO APP
+# https://supabase.com/docs/guides/cli/config
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[functions]
+# legal-chat: permite llamadas sin JWT para desarrollo (la API key de Gemini está en secrets)
+[functions.legal-chat]
+verify_jwt = false

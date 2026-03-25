@@ -1,20 +1,61 @@
+import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View, ActivityIndicator } from 'react-native';
+import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
+import ClientChatScreen from './src/screens/ClientChatScreen';
+import LawyerOnboardingFlow from './src/screens/lawyer-onboarding/LawyerOnboardingFlow';
+import LawyerPendingVerificationScreen from './src/screens/lawyer-onboarding/LawyerPendingVerificationScreen';
+import LawyerDashboardScreen from './src/screens/LawyerDashboardScreen';
+import { lawyerNeedsOnboarding, lawyerPendingVerification } from './src/types/profile';
+
+function AppContent() {
+  const { session, loading, profile, profileLoading } = useAuth();
+  const [screen, setScreen] = useState<'login' | 'register'>('login');
+
+  if (loading || (session != null && profileLoading)) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color="#001D3D" />
+      </View>
+    );
+  }
+
+  if (session) {
+    if (profile && lawyerPendingVerification(profile)) {
+      return <LawyerPendingVerificationScreen />;
+    }
+    if (profile && lawyerNeedsOnboarding(profile)) {
+      return <LawyerOnboardingFlow />;
+    }
+    if (profile?.role === 'lawyer' && profile.is_verified) {
+      return <LawyerDashboardScreen />;
+    }
+    return <ClientChatScreen />;
+  }
+
+  return screen === 'login' ? (
+    <LoginScreen onNavigateToRegister={() => setScreen('register')} />
+  ) : (
+    <RegisterScreen onNavigateToLogin={() => setScreen('login')} />
+  );
+}
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <AuthProvider>
+      <StatusBar style="dark" />
+      <AppContent />
+    </AuthProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  loading: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FB',
   },
 });

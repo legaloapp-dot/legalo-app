@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LÉGALO — Panel administrador
 
-## Getting Started
+Next.js 16 (App Router), Tailwind 4, plantilla tipo **dashboard** (sidebar oscuro, superficie clara, acentos índigo, tipografía **Plus Jakarta Sans**).
 
-First, run the development server:
+## Configuración
+
+1. Copia `.env.example` a `.env.local` y completa:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (solo servidor; no publicar)
+
+2. Crea el **superadmin** (recomendado):
+   ```bash
+   cd admin
+   npm run create-superadmin
+   ```
+   Por defecto usa `superadmin@legalo.app` / `Legal0SuperAdmin!` (cámbialo con variables `SUPERADMIN_*` en `.env.local`). Si el correo ya existe, solo actualiza el perfil a `admin`.
+
+   **Alternativa manual:** en Supabase → `profiles`, pon `role = 'admin'` para tu usuario.
+
+3. Arranca el panel:
 
 ```bash
+cd admin
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:3000](http://localhost:3000) e inicia sesión con el correo del admin.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Áreas
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Resumen**: métricas rápidas.
+- **Clientes**: CRUD (creación vía Auth Admin + perfil).
+- **Abogados**: CRUD; **detalle** con documentos (INPRE/cédula), aprobar/desaprobar verificación.
+- **Pagos**: listado con comprobante (URL firmada) y aprobar / rechazar / pendiente.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Las operaciones sensibles usan la **service role** en Server Actions tras comprobar sesión y rol `admin` en middleware.
