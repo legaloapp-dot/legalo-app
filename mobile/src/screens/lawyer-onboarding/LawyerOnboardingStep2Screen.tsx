@@ -14,9 +14,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { colors } from '../../theme/colors';
+
+/** RN: `fetch(fileUri)` a archivos locales suele fallar con "Network request failed"; leemos en base64. */
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binaryString = globalThis.atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
 
 interface LawyerOnboardingStep2ScreenProps {
   userId: string;
@@ -34,9 +45,11 @@ async function uploadLawyerDoc(
   const ext =
     mimeType?.includes('png') ? 'png' : mimeType?.includes('webp') ? 'webp' : 'jpg';
   const path = `${userId}/${prefix}-${Date.now()}.${ext}`;
-  const res = await fetch(uri);
-  const blob = await res.blob();
-  const { error } = await supabase.storage.from('lawyer-cards').upload(path, blob, {
+
+  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  const buffer = base64ToArrayBuffer(base64);
+
+  const { error } = await supabase.storage.from('lawyer-cards').upload(path, buffer, {
     contentType: mimeType || 'image/jpeg',
     cacheControl: '3600',
   });
@@ -112,7 +125,13 @@ export default function LawyerOnboardingStep2Screen({
       if (error) throw error;
       onComplete();
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo guardar la verificación.');
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert(
+        'Error',
+        msg.toLowerCase().includes('network')
+          ? 'Fallo de red al subir o guardar. Comprueba conexión (Wi‑Fi) e inténtalo de nuevo.'
+          : `No se pudo guardar: ${msg}`
+      );
     } finally {
       setSaving(false);
     }

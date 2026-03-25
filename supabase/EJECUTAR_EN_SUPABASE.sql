@@ -139,6 +139,7 @@ $$ language plpgsql security definer;
 -- 10. Rutas de documentos verificación (paso 2 abogado, bucket lawyer-cards; equivale a 20260325120000_lawyer_verification_docs.sql)
 alter table public.profiles add column if not exists lawyer_inpre_card_path text;
 alter table public.profiles add column if not exists lawyer_cedula_path text;
+alter table public.profiles add column if not exists lawyer_verification_rejected_at timestamptz;
 
 -- 11. Dashboard abogado: legal_cases, leads, lawyer_activity + trigger pago aprobado (20260326120000_dashboard_legal_data.sql)
 alter table public.profiles

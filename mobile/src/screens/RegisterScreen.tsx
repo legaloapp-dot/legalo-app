@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,15 @@ import { Ionicons } from '@expo/vector-icons';
 import Logo from '../components/Logo';
 import { supabase } from '../lib/supabase';
 import { colors } from '../theme/colors';
+import { useAuth } from '../contexts/AuthContext';
+
+/**
+ * Verificación por código OTP (sin salir de la app):
+ * En Supabase → Authentication → Email Templates → "Confirm signup",
+ * incluye el código en el cuerpo del correo, p. ej.:
+ *   Tu código: {{ .Token }}
+ * Usa solo {{ .Token }} (OTP corto). No uses {{ .TokenHash }} en el correo: es muy largo y no es el código a teclear.
+ */
 
 type Role = 'client' | 'lawyer';
 
@@ -22,7 +31,23 @@ interface RegisterScreenProps {
   onNavigateToLogin: () => void;
 }
 
+const RESEND_COOLDOWN_SEC = 60;
+/** Supabase suele enviar 6 dígitos; algunos proyectos permiten 8–10. No acortar el código al pegar. */
+const OTP_MIN_LEN = 6;
+const OTP_MAX_LEN = 12;
+
+function formatAuthError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+  if (lower.includes('rate limit') || lower.includes('too many requests') || raw.includes('429')) {
+    return 'Demasiados correos o intentos. Espera unos minutos o una hora, o prueba con otro correo. En Supabase: Authentication → Rate Limits (o desactiva confirmación por email solo en desarrollo).';
+  }
+  return raw;
+}
+
 export default function RegisterScreen({ onNavigateToLogin }: RegisterScreenProps) {
+  const { session, refreshProfile } = useAuth();
+  const handoffSessionRef = useRef(false);
   const [role, setRole] = useState<Role>('client');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -30,6 +55,25 @@ export default function RegisterScreen({ onNavigateToLogin }: RegisterScreenProp
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (handoffSessionRef.current && session) {
+      handoffSessionRef.current = false;
+      setLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setInterval(() => {
+      setResendCooldown((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [resendCooldown]);
 
   const handleRegister = async () => {
     if (!fullName.trim() || !email.trim() || !password.trim()) {
@@ -51,14 +95,154 @@ export default function RegisterScreen({ onNavigateToLogin }: RegisterScreenProp
         },
       });
       if (signUpError) throw signUpError;
-      // El trigger en Supabase crea el perfil automáticamente
-      onNavigateToLogin();
+
+      if (data.session) {
+        handoffSessionRef.current = true;
+        await refreshProfile();
+        return;
+      }
+
+      setOtpCode('');
+      setOtpStep(true);
+      setResendCooldown(RESEND_COOLDOWN_SEC);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al crear cuenta');
+      handoffSessionRef.current = false;
+      setError(formatAuthError(err));
+    } finally {
+      if (!handoffSessionRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const code = otpCode.replace(/\D/g, '').slice(0, OTP_MAX_LEN);
+    if (code.length < OTP_MIN_LEN || code.length > OTP_MAX_LEN) {
+      setError(
+        `Introduce el código completo (${OTP_MIN_LEN}–${OTP_MAX_LEN} dígitos, según el correo)`
+      );
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const { error: verifyErr } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: code,
+        type: 'signup',
+      });
+      if (verifyErr) throw verifyErr;
+
+      handoffSessionRef.current = true;
+      await refreshProfile();
+    } catch (err: unknown) {
+      handoffSessionRef.current = false;
+      setError(formatAuthError(err));
+    } finally {
+      if (!handoffSessionRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || !email.trim()) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const { error: resendErr } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim(),
+      });
+      if (resendErr) throw resendErr;
+      setResendCooldown(RESEND_COOLDOWN_SEC);
+    } catch (err: unknown) {
+      setError(formatAuthError(err));
     } finally {
       setLoading(false);
     }
   };
+
+  const handleBackFromOtp = () => {
+    setOtpStep(false);
+    setOtpCode('');
+    setError(null);
+  };
+
+  if (otpStep) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <TouchableOpacity style={styles.backRow} onPress={handleBackFromOtp} activeOpacity={0.7}>
+              <Ionicons name="arrow-back" size={22} color={colors.primary} />
+              <Text style={styles.backText}>Volver</Text>
+            </TouchableOpacity>
+
+            <View style={styles.header}>
+              <Logo size="large" style={{ marginBottom: 16 }} />
+              <Text style={styles.title}>Verifica tu correo</Text>
+              <Text style={styles.subtitle}>
+                Escribe el código numérico que enviamos a{' '}
+                <Text style={styles.emailHighlight}>{email.trim()}</Text>
+              </Text>
+            </View>
+
+            <View style={styles.form}>
+              <Text style={styles.label}>CÓDIGO</Text>
+              <TextInput
+                style={styles.otpInput}
+                placeholder={'•'.repeat(OTP_MIN_LEN)}
+                placeholderTextColor={colors.outlineVariant + '99'}
+                value={otpCode}
+                onChangeText={(t) => setOtpCode(t.replace(/\D/g, '').slice(0, OTP_MAX_LEN))}
+                keyboardType="number-pad"
+                maxLength={OTP_MAX_LEN}
+                textContentType="oneTimeCode"
+                autoComplete="one-time-code"
+              />
+
+              {error && <Text style={styles.errorText}>{error}</Text>}
+
+              <TouchableOpacity
+                style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+                onPress={handleVerifyOtp}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color={colors.onPrimary} />
+                ) : (
+                  <>
+                    <Text style={styles.primaryButtonText}>Confirmar código</Text>
+                    <Ionicons name="checkmark-circle-outline" size={22} color={colors.onPrimary} />
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.secondaryButton, resendCooldown > 0 && styles.secondaryButtonDisabled]}
+                onPress={handleResendOtp}
+                disabled={loading || resendCooldown > 0}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  {resendCooldown > 0
+                    ? `Reenviar código (${resendCooldown}s)`
+                    : 'Reenviar código'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -205,6 +389,18 @@ const styles = StyleSheet.create({
   keyboardView: { flex: 1 },
   scrollContent: { flexGrow: 1, padding: 24, paddingBottom: 40 },
 
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  backText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+
   header: {
     alignItems: 'center',
     marginBottom: 24,
@@ -221,6 +417,11 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceVariant,
     textAlign: 'center',
     fontWeight: '500',
+    paddingHorizontal: 8,
+  },
+  emailHighlight: {
+    fontWeight: '700',
+    color: colors.primary,
   },
 
   sectionLabel: {
@@ -290,6 +491,17 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '500',
   },
+  otpInput: {
+    backgroundColor: colors.surfaceContainerHighest,
+    borderRadius: 8,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: 4,
+    color: colors.primary,
+    textAlign: 'center',
+  },
   passwordWrapper: {
     backgroundColor: colors.surfaceContainerHighest,
     borderRadius: 8,
@@ -329,6 +541,17 @@ const styles = StyleSheet.create({
     color: colors.onPrimary,
     fontSize: 18,
     fontWeight: '700',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  secondaryButtonDisabled: { opacity: 0.5 },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.secondary,
+    textDecorationLine: 'underline',
   },
 
   loginLink: {

@@ -6,7 +6,11 @@ import {
   deleteLawyerAction,
 } from "@/actions/lawyers";
 import { DeleteButton } from "@/components/DeleteButton";
-import { Pencil, CheckCircle2, XCircle } from "lucide-react";
+import {
+  getLawyerVerificationDisplay,
+  variantClasses,
+} from "@/lib/lawyerVerificationDisplay";
+import { Pencil } from "lucide-react";
 
 export default async function AbogadosPage() {
   const rows = await listLawyersWithEmail();
@@ -71,7 +75,7 @@ export default async function AbogadosPage() {
               <th>Nombre</th>
               <th>Email</th>
               <th>Especialidad</th>
-              <th>Verificado</th>
+              <th>Estado verificación</th>
               <th className="w-44">Acciones</th>
             </tr>
           </thead>
@@ -89,15 +93,22 @@ export default async function AbogadosPage() {
                   <td className="font-mono text-xs">{r.email}</td>
                   <td>{r.specialty ?? "—"}</td>
                   <td>
-                    {r.is_verified ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-600">
-                        <CheckCircle2 className="h-4 w-4" /> Sí
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-amber-600">
-                        <XCircle className="h-4 w-4" /> No
-                      </span>
-                    )}
+                    {(() => {
+                      const v = getLawyerVerificationDisplay({
+                        is_verified: r.is_verified,
+                        lawyer_onboarding_step: r.lawyer_onboarding_step ?? null,
+                        lawyer_verification_rejected_at:
+                          (r as { lawyer_verification_rejected_at?: string | null })
+                            .lawyer_verification_rejected_at ?? null,
+                      });
+                      return (
+                        <span
+                          className={`inline-flex max-w-[200px] flex-col rounded-lg px-2.5 py-1.5 text-xs font-semibold ring-1 ${variantClasses(v.variant)}`}
+                        >
+                          <span>{v.label}</span>
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td>
                     <div className="flex flex-wrap items-center gap-2">

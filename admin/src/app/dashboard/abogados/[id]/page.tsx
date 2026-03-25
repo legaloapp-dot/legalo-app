@@ -1,12 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminHeader } from "@/components/layout/AdminHeader";
-import {
-  getLawyerById,
-  updateLawyerAction,
-  setLawyerVerifiedAction,
-} from "@/actions/lawyers";
-import { ArrowLeft, ShieldCheck, ShieldOff } from "lucide-react";
+import { getLawyerById, updateLawyerAction } from "@/actions/lawyers";
+import { LawyerVerificationActions } from "@/components/LawyerVerificationActions";
+import { getLawyerVerificationDisplay } from "@/lib/lawyerVerificationDisplay";
+import { ArrowLeft } from "lucide-react";
 
 export default async function AbogadoDetallePage({
   params,
@@ -17,6 +15,13 @@ export default async function AbogadoDetallePage({
   const data = await getLawyerById(id);
   if (!data) notFound();
   const { profile, email, inpreUrl, cedulaUrl } = data;
+  const verificationUi = getLawyerVerificationDisplay({
+    is_verified: profile.is_verified,
+    lawyer_onboarding_step: profile.lawyer_onboarding_step ?? null,
+    lawyer_verification_rejected_at:
+      (profile as { lawyer_verification_rejected_at?: string | null }).lawyer_verification_rejected_at ??
+      null,
+  });
 
   return (
     <>
@@ -30,32 +35,19 @@ export default async function AbogadoDetallePage({
 
       <AdminHeader
         title={profile.full_name ?? "Abogado"}
-        description={`${email} · ${profile.is_verified ? "Verificado" : "No verificado"}`}
+        description={`${email} · ${verificationUi.label}`}
       />
 
-      <div className="mb-8 flex flex-wrap gap-3">
-        <form action={setLawyerVerifiedAction}>
-          <input type="hidden" name="id" value={profile.id} />
-          <input type="hidden" name="verified" value="true" />
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow hover:bg-emerald-500"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Aprobar verificación
-          </button>
-        </form>
-        <form action={setLawyerVerifiedAction}>
-          <input type="hidden" name="id" value={profile.id} />
-          <input type="hidden" name="verified" value="false" />
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-800 hover:bg-rose-100"
-          >
-            <ShieldOff className="h-4 w-4" />
-            Desaprobar
-          </button>
-        </form>
+      <div className="mb-8 max-w-xl">
+        <LawyerVerificationActions
+          lawyerId={profile.id}
+          isVerified={!!profile.is_verified}
+          lawyerOnboardingStep={profile.lawyer_onboarding_step ?? null}
+          lawyerVerificationRejectedAt={
+            (profile as { lawyer_verification_rejected_at?: string | null }).lawyer_verification_rejected_at ??
+            null
+          }
+        />
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">

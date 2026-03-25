@@ -55,20 +55,13 @@ export default function LawyerOnboardingStep3Screen({
   onBack,
 }: LawyerOnboardingStep3ScreenProps) {
   const [primary, setPrimary] = useState(() => parseInitialPhone(initialPhone ?? null));
-  const [confirm, setConfirm] = useState(() => parseInitialPhone(initialPhone ?? null));
   const [saving, setSaving] = useState(false);
 
   const primaryDigits = useMemo(() => digitsNational(primary).slice(0, 10), [primary]);
-  const confirmDigits = useMemo(() => digitsNational(confirm).slice(0, 10), [confirm]);
 
   const setPrimaryFromText = (t: string) => {
     const d = digitsNational(t).slice(0, 10);
     setPrimary(d);
-  };
-
-  const setConfirmFromText = (t: string) => {
-    const d = digitsNational(t).slice(0, 10);
-    setConfirm(d);
   };
 
   const handleContinue = async () => {
@@ -78,10 +71,6 @@ export default function LawyerOnboardingStep3Screen({
     }
     if (!primaryDigits.startsWith('4')) {
       Alert.alert('WhatsApp', 'El número móvil debe comenzar por 4 (ej. 412, 414, 424).');
-      return;
-    }
-    if (primaryDigits !== confirmDigits) {
-      Alert.alert('Confirmación', 'Los números no coinciden. Repite el mismo número en ambos campos.');
       return;
     }
 
@@ -176,25 +165,6 @@ export default function LawyerOnboardingStep3Screen({
               </View>
             </View>
 
-            <Text style={[styles.label, styles.labelSp]}>Confirmar número de WhatsApp</Text>
-            <View style={styles.confirmWrap}>
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={22}
-                color={colors.primary + '99'}
-                style={styles.confirmIcon}
-              />
-              <TextInput
-                style={styles.confirmInput}
-                placeholder="Repite tu número"
-                placeholderTextColor={colors.outline + 'AA'}
-                value={formatDisplay(confirmDigits)}
-                onChangeText={setConfirmFromText}
-                keyboardType="phone-pad"
-                maxLength={12}
-              />
-            </View>
-
             <TouchableOpacity
               style={[styles.cta, saving && styles.ctaDisabled]}
               onPress={() => void handleContinue()}
@@ -222,8 +192,8 @@ export default function LawyerOnboardingStep3Screen({
           <View style={styles.supportBlock}>
             <Text style={styles.supportLabel}>Asistencia técnica</Text>
             <Text style={styles.supportBody}>
-              ¿No recibes el código? Asegúrate de que tu número esté vinculado a una cuenta activa
-              de WhatsApp Business para una mejor experiencia profesional.
+              Usa el número con el que recibes WhatsApp. Más adelante podrás verificarlo con un código
+              por WhatsApp.
             </Text>
           </View>
 
@@ -377,7 +347,6 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceVariant,
     marginBottom: 10,
   },
-  labelSp: { marginTop: 20 },
   waRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -414,25 +383,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     paddingHorizontal: 12,
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.primary,
-  },
-  confirmWrap: {
-    position: 'relative',
-  },
-  confirmIcon: {
-    position: 'absolute',
-    left: 14,
-    top: 15,
-    zIndex: 2,
-  },
-  confirmInput: {
-    backgroundColor: colors.surfaceContainerHighest,
-    borderRadius: 8,
-    paddingVertical: 14,
-    paddingLeft: 44,
-    paddingRight: 16,
     fontSize: 16,
     fontWeight: '500',
     color: colors.primary,

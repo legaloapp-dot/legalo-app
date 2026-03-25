@@ -132,20 +132,37 @@ export async function updateLawyerAction(formData: FormData) {
   revalidatePath(`/dashboard/abogados/${id}`);
 }
 
-export async function setLawyerVerifiedAction(formData: FormData) {
+/** Aprobar o rechazar verificación de abogado (`verification_action`: approve | reject). */
+export async function setLawyerVerificationAction(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");
-  const verified = String(formData.get("verified") ?? "") === "true";
+  const action = String(formData.get("verification_action") ?? "") as "approve" | "reject";
   if (!id) throw new Error("ID inválido");
+  if (!["approve", "reject"].includes(action)) throw new Error("Acción inválida");
 
   const admin = createServiceClient();
-  const { error } = await admin
-    .from("profiles")
-    .update({ is_verified: verified })
-    .eq("id", id)
-    .eq("role", "lawyer");
+  if (action === "approve") {
+    const { error } = await admin
+      .from("profiles")
+      .update({
+        is_verified: true,
+        lawyer_verification_rejected_at: null,
+      })
+      .eq("id", id)
+      .eq("role", "lawyer");
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await admin
+      .from("profiles")
+      .update({
+        is_verified: false,
+        lawyer_verification_rejected_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("role", "lawyer");
+    if (error) throw new Error(error.message);
+  }
 
-  if (error) throw new Error(error.message);
   revalidatePath("/dashboard/abogados");
   revalidatePath(`/dashboard/abogados/${id}`);
 }
