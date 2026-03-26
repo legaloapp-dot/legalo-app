@@ -37,19 +37,43 @@ export function useLawyerDashboardData(lawyerId: string | undefined) {
     }
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
-      const [cases, leads, activity] = await Promise.all([
+      const [c, l, a] = await Promise.allSettled([
         fetchLawyerCases(lawyerId),
         fetchLawyerLeads(lawyerId),
         fetchLawyerActivity(lawyerId),
       ]);
+
+      const cases = c.status === 'fulfilled' ? c.value : [];
+      const leads = l.status === 'fulfilled' ? l.value : [];
+      const activity = a.status === 'fulfilled' ? a.value : [];
+
+      const parts: string[] = [];
+      if (c.status === 'rejected') {
+        parts.push(
+          `Casos: ${c.reason instanceof Error ? c.reason.message : String(c.reason)}`
+        );
+      }
+      if (l.status === 'rejected') {
+        parts.push(
+          `Leads: ${l.reason instanceof Error ? l.reason.message : String(l.reason)}`
+        );
+      }
+      if (a.status === 'rejected') {
+        parts.push(
+          `Actividad: ${a.reason instanceof Error ? a.reason.message : String(a.reason)}`
+        );
+      }
+
+      const allFailed = c.status === 'rejected' && l.status === 'rejected' && a.status === 'rejected';
+
       setState({
         loading: false,
-        error: null,
+        error: allFailed ? parts.join(' · ') : null,
         cases,
         leads,
         activity,
         activeCaseCount: countActiveCases(cases),
-        newLeadsCount: leads.filter((l) => l.status === 'new').length,
+        newLeadsCount: leads.filter((x) => x.status === 'new').length,
       });
     } catch (e) {
       setState((s) => ({

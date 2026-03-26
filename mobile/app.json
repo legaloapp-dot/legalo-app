@@ -33,6 +33,15 @@
         {
           "photosPermission": "LÉGALO necesita acceso a tu galería para subir el carnet de Inpreabogado y tu cédula."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#001D3D",
+          "sounds": [],
+          "mode": "production"
+        }
       ]
     ],
     "extra": {

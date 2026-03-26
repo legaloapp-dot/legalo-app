@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { consumeConnectionCreditForLawyer } from '../lib/connectionCredits';
 import { colors } from '../theme/colors';
 
 export interface CreateCaseLawyer {
@@ -30,13 +31,21 @@ export default function CreateCaseScreen({
   clientDisplayName,
   onClose,
   onCaseCreated,
+  deductConnectionCredit,
 }: {
   visible: boolean;
   lawyer: CreateCaseLawyer;
   clientId: string;
   clientDisplayName: string;
   onClose: () => void;
-  onCaseCreated: (payload: { title: string; lawyer: CreateCaseLawyer }) => void;
+  onCaseCreated: (payload: {
+    title: string;
+    lawyer: CreateCaseLawyer;
+    status: 'pending_approval';
+    deductConnectionCredit?: boolean;
+  }) => void;
+  /** Si el cliente contacta con cupón de conexión (sin fee nuevo), se consume al crear el caso. */
+  deductConnectionCredit?: boolean;
 }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -66,14 +75,22 @@ export default function CreateCaseScreen({
         lawyer_id: lawyer.id,
         title: t,
         description: description.trim() || null,
-        status: 'active',
+        status: 'pending_approval',
         client_display_name: clientDisplayName.trim() || 'Cliente',
-        last_activity: 'Caso creado en LÉGALO',
+        last_activity: 'Solicitud enviada: pendiente de aprobación del abogado',
         last_activity_at: new Date().toISOString(),
       });
       if (error) throw error;
+      if (deductConnectionCredit) {
+        await consumeConnectionCreditForLawyer(clientId, lawyer.id);
+      }
       reset();
-      onCaseCreated({ title: t, lawyer });
+      onCaseCreated({
+        title: t,
+        lawyer,
+        status: 'pending_approval',
+        deductConnectionCredit: !!deductConnectionCredit,
+      });
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo guardar el caso.');
     } finally {
@@ -98,8 +115,14 @@ export default function CreateCaseScreen({
             <View style={styles.headerSpacer} />
           </View>
           <Text style={styles.sub}>
-            Vas a contactar a <Text style={styles.bold}>{lawyerLabel}</Text>. Describe el asunto; luego se
-            abrirá WhatsApp con un mensaje que incluye el título del caso.
+            Vas a solicitar un caso con <Text style={styles.bold}>{lawyerLabel}</Text>. El abogado debe
+            aprobarlo primero. Cuando lo acepte, podrás contactarle por WhatsApp desde Mis casos.
+            {deductConnectionCredit ? (
+              <>
+                {' '}
+                <Text style={styles.bold}>Se usará tu cupón de conexión</Text> (sin pago adicional).
+              </>
+            ) : null}
           </Text>
           <ScrollView
             style={styles.scroll}
@@ -139,8 +162,8 @@ export default function CreateCaseScreen({
                 <ActivityIndicator color={colors.chatSurface} />
               ) : (
                 <>
-                  <Ionicons name="logo-whatsapp" size={20} color={colors.chatSurface} />
-                  <Text style={styles.primaryBtnText}>Guardar y abrir WhatsApp</Text>
+                  <Ionicons name="send" size={20} color={colors.chatSurface} />
+                  <Text style={styles.primaryBtnText}>Enviar solicitud</Text>
                 </>
               )}
             </TouchableOpacity>

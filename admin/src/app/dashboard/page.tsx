@@ -59,7 +59,8 @@ export default async function DashboardPage() {
         <h2 className="text-lg font-bold text-slate-900">Bienvenido al panel</h2>
         <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Usa el menú lateral para administrar <strong>clientes</strong>, <strong>abogados</strong>{" "}
-          (incluye verificación y documentos) y <strong>pagos</strong> con comprobantes.
+          (incluye verificación y documentos), <strong>casos</strong> y <strong>pagos</strong> con
+          comprobantes.
         </p>
       </div>
     </>

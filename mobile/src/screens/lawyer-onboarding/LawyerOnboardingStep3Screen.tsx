@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -57,7 +57,8 @@ export default function LawyerOnboardingStep3Screen({
   const [primary, setPrimary] = useState(() => parseInitialPhone(initialPhone ?? null));
   const [saving, setSaving] = useState(false);
 
-  const primaryDigits = useMemo(() => digitsNational(primary).slice(0, 10), [primary]);
+  /** Dígitos nacionales (10); se recalcula en cada render (evita estados fantasma tras hot reload). */
+  const primaryDigits = digitsNational(primary).slice(0, 10);
 
   const setPrimaryFromText = (t: string) => {
     const d = digitsNational(t).slice(0, 10);

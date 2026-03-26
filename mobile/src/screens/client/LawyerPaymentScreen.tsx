@@ -22,6 +22,7 @@ export interface PaymentLawyer {
   id: string;
   full_name: string | null;
   specialty: string | null;
+  avatar_url?: string | null;
 }
 
 export default function LawyerPaymentScreen({
@@ -123,7 +124,13 @@ export default function LawyerPaymentScreen({
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.lawyerCard}>
-            <Ionicons name="hammer-outline" size={28} color={colors.chatSecondary} />
+            <View style={styles.lawyerAvatarWrap}>
+              {lawyer.avatar_url ? (
+                <Image source={{ uri: lawyer.avatar_url }} style={styles.lawyerAvatarImg} />
+              ) : (
+                <Ionicons name="hammer-outline" size={28} color={colors.chatSecondary} />
+              )}
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.lawyerName}>{lawyerLabel}</Text>
               {lawyer.specialty ? (
@@ -234,6 +241,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.chatOutlineVariant + '44',
   },
+  lawyerAvatarWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: colors.chatPrimaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  lawyerAvatarImg: { width: '100%', height: '100%', borderRadius: 12 },
   lawyerName: { fontSize: 17, fontWeight: '800', color: colors.chatOnSurface },
   lawyerSpec: { fontSize: 13, color: colors.chatOutline, marginTop: 4 },
   amountBox: {

@@ -10,8 +10,11 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import type { Profile } from '../../types/profile';
@@ -23,6 +26,15 @@ import { colors } from '../../theme/colors';
 
 const BIO_MAX = 600;
 
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binaryString = globalThis.atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 export default function LawyerProfileEditTab({
   profile,
   userId,
@@ -30,6 +42,7 @@ export default function LawyerProfileEditTab({
   onSignOut,
   onClose,
   refreshProfile,
+  headerRight,
 }: {
   profile: Profile | null;
   userId: string | undefined;
@@ -37,6 +50,7 @@ export default function LawyerProfileEditTab({
   onSignOut: () => void;
   onClose: () => void;
   refreshProfile: () => Promise<void>;
+  headerRight?: React.ReactNode;
 }) {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -46,6 +60,7 @@ export default function LawyerProfileEditTab({
   const [yearsText, setYearsText] = useState('');
   const [bio, setBio] = useState('');
   const [saving, setSaving] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   useEffect(() => {
     if (!profile) return;
@@ -72,6 +87,93 @@ export default function LawyerProfileEditTab({
   const yearsNum = yearsText.trim() === '' ? null : parseInt(yearsText, 10);
   const yearsInvalid =
     yearsText.trim() !== '' && (Number.isNaN(yearsNum) || yearsNum! < 0 || yearsNum! > 80);
+
+  const pickAndUploadAvatar = async () => {
+    if (!userId) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permisos', 'Necesitamos acceso a la galería para subir tu foto.');
+      return;
+    }
+    // En Android el recorte nativo (allowsEditing) depende de cada marca y a veces no muestra
+    // un botón claro para confirmar. En iOS el flujo suele ser claro; en Android usamos la foto tal cual (se ve en círculo).
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: Platform.OS === 'ios',
+      ...(Platform.OS === 'ios' ? { aspect: [1, 1] as [number, number] } : {}),
+      quality: 0.85,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const mime = asset.mimeType ?? 'image/jpeg';
+    const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
+    const path = `${userId}/avatar.${ext}`;
+
+    setAvatarUploading(true);
+    try {
+      const { data: existing } = await supabase.storage.from('avatars').list(userId);
+      if (existing?.length) {
+        await supabase.storage
+          .from('avatars')
+          .remove(existing.map((f) => `${userId}/${f.name}`));
+      }
+
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
+      const buffer = base64ToArrayBuffer(base64);
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, buffer, {
+        upsert: true,
+        contentType: mime,
+        cacheControl: '3600',
+      });
+      if (upErr) throw upErr;
+
+      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+      const publicUrl = `${pub.publicUrl}?t=${Date.now()}`;
+      const { error: dbErr } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', userId);
+      if (dbErr) throw dbErr;
+      await refreshProfile();
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo subir la foto.');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const confirmRemoveAvatar = () => {
+    if (!userId || !profile?.avatar_url) return;
+    Alert.alert('Quitar foto', '¿Eliminar tu foto de perfil?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Quitar',
+        style: 'destructive',
+        onPress: () => void removeAvatar(),
+      },
+    ]);
+  };
+
+  const removeAvatar = async () => {
+    if (!userId) return;
+    setAvatarUploading(true);
+    try {
+      const { data: files } = await supabase.storage.from('avatars').list(userId);
+      if (files?.length) {
+        const { error: rmErr } = await supabase.storage
+          .from('avatars')
+          .remove(files.map((f) => `${userId}/${f.name}`));
+        if (rmErr) throw rmErr;
+      }
+      const { error } = await supabase.from('profiles').update({ avatar_url: null }).eq('id', userId);
+      if (error) throw error;
+      await refreshProfile();
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo quitar la foto.');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!userId) return;
@@ -128,7 +230,7 @@ export default function LawyerProfileEditTab({
             <Ionicons name="arrow-back" size={24} color={colors.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Mi perfil</Text>
-          <View style={styles.headerBtn} />
+          <View style={styles.headerBtn}>{headerRight ?? null}</View>
         </View>
 
         <ScrollView
@@ -136,8 +238,41 @@ export default function LawyerProfileEditTab({
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={48} color={colors.primary} />
+          <View style={styles.avatarBlock}>
+            <TouchableOpacity
+              style={styles.avatarTouchable}
+              onPress={() => void pickAndUploadAvatar()}
+              disabled={avatarUploading}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Cambiar foto de perfil"
+            >
+              <View style={styles.avatar}>
+                {profile?.avatar_url ? (
+                  <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+                ) : (
+                  <Ionicons name="person" size={48} color={colors.primary} />
+                )}
+                {avatarUploading ? (
+                  <View style={styles.avatarLoading}>
+                    <ActivityIndicator color={colors.onPrimary} />
+                  </View>
+                ) : (
+                  <View style={styles.avatarCameraBadge}>
+                    <Ionicons name="camera" size={16} color={colors.onPrimary} />
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.avatarHint}>
+              Toca la foto para cambiarla
+              {Platform.OS === 'android' ? '\nEn Android se usa la imagen completa y se ve en círculo.' : ''}
+            </Text>
+            {profile?.avatar_url ? (
+              <TouchableOpacity onPress={confirmRemoveAvatar} disabled={avatarUploading}>
+                <Text style={styles.removePhoto}>Quitar foto</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
           <Text style={styles.email}>{email}</Text>
 
@@ -267,6 +402,11 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '800', color: colors.primary },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 20, paddingBottom: 40 },
+  avatarBlock: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  avatarTouchable: { alignSelf: 'center' },
   avatar: {
     width: 96,
     height: 96,
@@ -274,14 +414,52 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: colors.outlineVariant + '66',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 48,
+  },
+  avatarLoading: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.primary + '99',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarCameraBadge: {
+    position: 'absolute',
+    right: 4,
+    bottom: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  avatarHint: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.outline,
+    marginTop: 10,
+  },
+  removePhoto: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.error,
+    marginTop: 8,
   },
   email: {
     fontSize: 14,
     color: colors.outline,
     textAlign: 'center',
     marginBottom: 24,
+    marginTop: 8,
   },
   label: {
     fontSize: 11,

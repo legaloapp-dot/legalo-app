@@ -3,6 +3,8 @@ export type UserRole = 'client' | 'lawyer' | 'admin';
 export interface Profile {
   id: string;
   full_name: string | null;
+  /** URL pública de la foto (Storage bucket `avatars`) */
+  avatar_url?: string | null;
   role: UserRole;
   phone: string | null;
   is_verified: boolean;

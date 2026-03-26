@@ -50,6 +50,60 @@ export default function LawyerCaseDetailModal({
     setLastActivity(caseRow.last_activity ?? '');
   }, [caseRow]);
 
+  const handleApproveCase = async () => {
+    if (!lawyerId || !caseRow) return;
+    setSaving(true);
+    try {
+      const row = await updateLawyerCase(caseRow.id, lawyerId, {
+        title: title.trim(),
+        description: description.trim() || null,
+        status: 'active',
+        last_activity: 'Caso aceptado por el abogado',
+      });
+      onSaved(row);
+      onClose();
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo aprobar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRejectCase = () => {
+    if (!lawyerId || !caseRow) return;
+    Alert.alert(
+      'Rechazar solicitud',
+      'El cliente podrá elegir en «Mis casos» un cupón de conexión (misma especialidad) o solicitar reembolso del fee.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Rechazar',
+          style: 'destructive',
+          onPress: () => void confirmReject(),
+        },
+      ]
+    );
+  };
+
+  const confirmReject = async () => {
+    if (!lawyerId || !caseRow) return;
+    setSaving(true);
+    try {
+      const row = await updateLawyerCase(caseRow.id, lawyerId, {
+        title: title.trim(),
+        description: description.trim() || null,
+        status: 'rejected_by_lawyer',
+        last_activity: 'El abogado no aceptó tomar este caso',
+      });
+      onSaved(row);
+      onClose();
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo rechazar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!lawyerId || !caseRow) return;
     const t = title.trim();
@@ -59,6 +113,16 @@ export default function LawyerCaseDetailModal({
     }
     setSaving(true);
     try {
+      if (caseRow.status === 'pending_approval') {
+        const row = await updateLawyerCase(caseRow.id, lawyerId, {
+          title: t,
+          description: description.trim() || null,
+          last_activity: lastActivity.trim() || null,
+        });
+        onSaved(row);
+        onClose();
+        return;
+      }
       const row = await updateLawyerCase(caseRow.id, lawyerId, {
         title: t,
         description: description.trim() || null,
@@ -111,6 +175,34 @@ export default function LawyerCaseDetailModal({
               </Text>
             </View>
 
+            {caseRow.status === 'pending_approval' ? (
+              <View style={styles.approvalBox}>
+                <Text style={styles.approvalTitle}>Solicitud nueva</Text>
+                <Text style={styles.approvalHint}>
+                  El cliente ya pagó el fee de contacto. Acepta para iniciar el trabajo o rechaza si no puedes
+                  tomar el caso.
+                </Text>
+                <View style={styles.approvalRow}>
+                  <TouchableOpacity
+                    style={[styles.approvalBtn, styles.approveBtn]}
+                    onPress={() => void handleApproveCase()}
+                    disabled={saving}
+                  >
+                    <Ionicons name="checkmark-circle" size={20} color={colors.onPrimary} />
+                    <Text style={styles.approveBtnText}>Aprobar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.approvalBtn, styles.rejectBtn]}
+                    onPress={() => void handleRejectCase()}
+                    disabled={saving}
+                  >
+                    <Ionicons name="close-circle" size={20} color={colors.error} />
+                    <Text style={styles.rejectBtnText}>Rechazar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
             <Text style={styles.label}>Título</Text>
             <TextInput
               style={styles.input}
@@ -132,27 +224,34 @@ export default function LawyerCaseDetailModal({
             />
 
             <Text style={styles.label}>Estado</Text>
-            <View style={styles.statusGrid}>
-              {CASE_STATUS_EDIT_OPTIONS.map((opt) => {
-                const selected = status === opt.value;
-                const pill = caseStatusLabel(opt.value);
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.statusChip, selected && styles.statusChipOn]}
-                    onPress={() => setStatus(opt.value)}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={[styles.statusChipText, selected && styles.statusChipTextOn]}>
-                      {opt.label}
-                    </Text>
-                    <Text style={[styles.statusChipHint, selected && styles.statusChipHintOn]}>
-                      {pill.text}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {caseRow.status === 'pending_approval' ? (
+              <Text style={styles.pendingReadonly}>
+                Pendiente de tu decisión (Aprobar / Rechazar). Puedes guardar cambios en título o notas sin
+                cambiar el estado.
+              </Text>
+            ) : (
+              <View style={styles.statusGrid}>
+                {CASE_STATUS_EDIT_OPTIONS.map((opt) => {
+                  const selected = status === opt.value;
+                  const pill = caseStatusLabel(opt.value);
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.statusChip, selected && styles.statusChipOn]}
+                      onPress={() => setStatus(opt.value)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.statusChipText, selected && styles.statusChipTextOn]}>
+                        {opt.label}
+                      </Text>
+                      <Text style={[styles.statusChipHint, selected && styles.statusChipHintOn]}>
+                        {pill.text}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
 
             <Text style={styles.label}>Última actividad (nota)</Text>
             <TextInput
@@ -217,6 +316,41 @@ const styles = StyleSheet.create({
   },
   metaValue: { fontSize: 17, fontWeight: '700', color: colors.primary, marginTop: 4 },
   metaHint: { fontSize: 12, color: colors.onSurfaceVariant, marginTop: 6 },
+  approvalBox: {
+    backgroundColor: colors.primaryContainer + '99',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: colors.primary + '33',
+  },
+  approvalTitle: { fontSize: 15, fontWeight: '800', color: colors.primary },
+  approvalHint: {
+    fontSize: 13,
+    color: colors.onSurfaceVariant,
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  approvalRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  approvalBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  approveBtn: { backgroundColor: colors.primary },
+  rejectBtn: { backgroundColor: colors.errorContainer, borderWidth: 1, borderColor: colors.error + '33' },
+  approveBtnText: { color: colors.onPrimary, fontSize: 15, fontWeight: '800' },
+  rejectBtnText: { color: colors.error, fontSize: 15, fontWeight: '800' },
+  pendingReadonly: {
+    fontSize: 13,
+    color: colors.onSurfaceVariant,
+    marginBottom: 18,
+    lineHeight: 20,
+  },
   label: {
     fontSize: 12,
     fontWeight: '700',

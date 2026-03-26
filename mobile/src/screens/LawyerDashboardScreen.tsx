@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,10 @@ import { relativeTimeEs, digitsOnlyE164 } from '../lib/format';
 import LawyerLeadsPanel from './lawyer/LawyerLeadsPanel';
 import LawyerCaseDetailModal from './lawyer/LawyerCaseDetailModal';
 import LawyerProfileEditTab from './lawyer/LawyerProfileEditTab';
+import LawyerNotificationsModal from '../components/LawyerNotificationsModal';
+import LawyerNotificationBell from '../components/LawyerNotificationBell';
+import { useLawyerNotifications } from '../hooks/useLawyerNotifications';
+import { registerAndSaveLawyerPushToken } from '../lib/pushNotifications';
 
 const WHATSAPP = '#25D366';
 
@@ -40,22 +45,30 @@ export default function LawyerDashboardScreen() {
   const { profile, session, refreshProfile } = useAuth();
   const lawyerId = session?.user?.id;
   const dashboard = useLawyerDashboardData(lawyerId);
+  const notifications = useLawyerNotifications(lawyerId);
   const [tab, setTab] = useState<LawyerTab>('cases');
   const [receivingCases, setReceivingCases] = useState(profile?.accepting_cases ?? true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCase, setSelectedCase] = useState<LegalCaseRow | null>(null);
   const [caseModalVisible, setCaseModalVisible] = useState(false);
+  const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
 
   useEffect(() => {
     setReceivingCases(profile?.accepting_cases ?? true);
   }, [profile?.accepting_cases]);
 
+  useEffect(() => {
+    if (!lawyerId) return;
+    void registerAndSaveLawyerPushToken(lawyerId);
+  }, [lawyerId]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await dashboard.refresh();
+    await notifications.refresh();
     await refreshProfile();
     setRefreshing(false);
-  }, [dashboard, refreshProfile]);
+  }, [dashboard, notifications, refreshProfile]);
 
   const persistAccepting = async (v: boolean) => {
     if (!lawyerId) return;
@@ -116,40 +129,73 @@ export default function LawyerDashboardScreen() {
     dot: activityDot(a.event_type),
   });
 
+  const openNotifications = useCallback(() => {
+    setNotificationsModalVisible(true);
+    void notifications.refresh();
+  }, [notifications]);
+
+  const notificationsModalEl = (
+    <LawyerNotificationsModal
+      visible={notificationsModalVisible}
+      onClose={() => {
+        setNotificationsModalVisible(false);
+        void notifications.refresh();
+      }}
+      items={notifications.items}
+      loading={notifications.loading}
+      onMarkRead={(id) => void notifications.markRead(id)}
+      onMarkAllRead={() => void notifications.markAllRead()}
+    />
+  );
+
   if (tab === 'leads') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.subHeader}>
-          <TouchableOpacity onPress={() => setTab('cases')} style={styles.subBack} hitSlop={12}>
-            <Ionicons name="arrow-back" size={24} color={colors.primary} />
-          </TouchableOpacity>
-          <Text style={styles.subTitle}>Leads</Text>
-        </View>
-        <LawyerLeadsPanel
-          leads={dashboard.leads}
-          lawyerId={lawyerId}
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          onLeadUpdated={() => void dashboard.refresh()}
-        />
-        <LawyerBottomNav active={tab} onChange={setTab} />
-      </SafeAreaView>
+      <>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View style={styles.subHeader}>
+            <View style={styles.subHeaderSlot}>
+              <TouchableOpacity onPress={() => setTab('cases')} hitSlop={12}>
+                <Ionicons name="arrow-back" size={24} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.subTitle, styles.subHeaderTitleFlex]}>Leads</Text>
+            <View style={styles.subHeaderSlot}>
+              <LawyerNotificationBell unreadCount={notifications.unreadCount} onPress={openNotifications} />
+            </View>
+          </View>
+          <LawyerLeadsPanel
+            leads={dashboard.leads}
+            lawyerId={lawyerId}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onLeadUpdated={() => void dashboard.refresh()}
+          />
+          <LawyerBottomNav active={tab} onChange={setTab} />
+        </SafeAreaView>
+        {notificationsModalEl}
+      </>
     );
   }
 
   if (tab === 'profile') {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <LawyerProfileEditTab
-          profile={profile}
-          userId={lawyerId}
-          email={session?.user?.email ?? ''}
-          onSignOut={() => void supabase.auth.signOut()}
-          onClose={() => setTab('cases')}
-          refreshProfile={refreshProfile}
-        />
-        <LawyerBottomNav active={tab} onChange={setTab} />
-      </SafeAreaView>
+      <>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <LawyerProfileEditTab
+            profile={profile}
+            userId={lawyerId}
+            email={session?.user?.email ?? ''}
+            onSignOut={() => void supabase.auth.signOut()}
+            onClose={() => setTab('cases')}
+            refreshProfile={refreshProfile}
+            headerRight={
+              <LawyerNotificationBell unreadCount={notifications.unreadCount} onPress={openNotifications} />
+            }
+          />
+          <LawyerBottomNav active={tab} onChange={setTab} />
+        </SafeAreaView>
+        {notificationsModalEl}
+      </>
     );
   }
 
@@ -182,12 +228,20 @@ export default function LawyerDashboardScreen() {
             <Text style={styles.brandText}>LÉGALO</Text>
           </View>
           <View style={styles.topRight}>
-            <TouchableOpacity style={styles.iconPad} hitSlop={12}>
-              <Ionicons name="notifications-outline" size={24} color={colors.primary} />
+            <LawyerNotificationBell unreadCount={notifications.unreadCount} onPress={openNotifications} />
+            <TouchableOpacity
+              style={styles.avatar}
+              onPress={() => setTab('profile')}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Ir a mi perfil"
+            >
+              {profile?.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+              ) : (
+                <Ionicons name="person" size={22} color={colors.primary} />
+              )}
             </TouchableOpacity>
-            <View style={styles.avatar}>
-              <Ionicons name="person" size={22} color={colors.primary} />
-            </View>
           </View>
         </View>
 
@@ -309,10 +363,12 @@ export default function LawyerDashboardScreen() {
                       (c.status === 'consulting' || c.status === 'closed' || c.status === 'pending') && {
                         backgroundColor: colors.primaryContainer,
                       },
+                      c.status === 'pending_approval' && { backgroundColor: colors.tertiaryContainer },
+                      c.status === 'rejected_by_lawyer' && { backgroundColor: colors.errorContainer },
                     ]}
                   >
                     <Ionicons
-                      name={iconName}
+                      name={iconName as keyof typeof Ionicons.glyphMap}
                       size={22}
                       color={
                         c.status === 'drafting' || c.status === 'in_court'
@@ -398,6 +454,8 @@ export default function LawyerDashboardScreen() {
         }}
       />
 
+      {notificationsModalEl}
+
       <LawyerBottomNav active={tab} onChange={setTab} />
     </SafeAreaView>
   );
@@ -459,11 +517,16 @@ const styles = StyleSheet.create({
   subHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     paddingVertical: 8,
-    gap: 8,
   },
-  subBack: { padding: 8 },
+  subHeaderSlot: {
+    width: 48,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  subHeaderTitleFlex: { flex: 1, textAlign: 'center' },
   subTitle: { fontSize: 18, fontWeight: '800', color: colors.primary },
 
   topBar: {
@@ -481,7 +544,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   topRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconPad: { padding: 6 },
   avatar: {
     width: 40,
     height: 40,
@@ -492,6 +554,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
   },
 
   welcome: {

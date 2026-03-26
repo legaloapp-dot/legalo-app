@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 
 export type LegalCaseStatus =
+  | 'pending_approval'
+  | 'rejected_by_lawyer'
   | 'active'
   | 'in_court'
   | 'pending'
@@ -42,6 +44,33 @@ export interface LawyerActivityRow {
   created_at: string;
 }
 
+/** Tabla `cases` ausente o no expuesta (proyectos con solo migración 11 y `legal_cases`). */
+function isCasesTableUnavailable(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  if (err.code === 'PGRST205') return true;
+  const m = (err.message ?? '').toLowerCase();
+  return (
+    m.includes('schema cache') ||
+    (m.includes('relation') && m.includes('cases') && m.includes('does not exist'))
+  );
+}
+
+/** Fila antigua `legal_cases` → forma unificada `LegalCaseRow`. */
+function mapLegacyLegalCaseRow(row: Record<string, unknown>): LegalCaseRow {
+  return {
+    id: String(row.id),
+    lawyer_id: row.lawyer_id != null ? String(row.lawyer_id) : '',
+    client_id: row.client_id != null ? String(row.client_id) : '',
+    title: String(row.title ?? ''),
+    description: null,
+    client_display_name: null,
+    status: row.status as LegalCaseStatus,
+    last_activity: row.last_activity != null ? String(row.last_activity) : null,
+    last_activity_at: row.last_activity_at != null ? String(row.last_activity_at) : null,
+    created_at: String(row.created_at ?? ''),
+  };
+}
+
 export async function fetchLawyerCases(lawyerId: string): Promise<LegalCaseRow[]> {
   const { data, error } = await supabase
     .from('cases')
@@ -49,8 +78,30 @@ export async function fetchLawyerCases(lawyerId: string): Promise<LegalCaseRow[]
     .eq('lawyer_id', lawyerId)
     .order('last_activity_at', { ascending: false, nullsFirst: false })
     .limit(50);
-  if (error) throw error;
-  return (data ?? []) as LegalCaseRow[];
+
+  if (!error) {
+    return (data ?? []) as LegalCaseRow[];
+  }
+
+  if (!isCasesTableUnavailable(error)) {
+    throw new Error(error.message || 'Error al cargar casos');
+  }
+
+  const { data: legacy, error: legacyErr } = await supabase
+    .from('legal_cases')
+    .select('*')
+    .eq('lawyer_id', lawyerId)
+    .order('last_activity_at', { ascending: false, nullsFirst: false })
+    .limit(50);
+
+  if (legacyErr) {
+    throw new Error(
+      legacyErr.message ||
+        'No existe la tabla cases ni legal_cases. Ejecuta el SQL del repo (EJECUTAR_EN_SUPABASE o migraciones).'
+    );
+  }
+
+  return (legacy ?? []).map((r) => mapLegacyLegalCaseRow(r as Record<string, unknown>));
 }
 
 export async function fetchLawyerLeads(lawyerId: string): Promise<LeadRow[]> {
@@ -76,7 +127,10 @@ export async function fetchLawyerActivity(lawyerId: string): Promise<LawyerActiv
 }
 
 export function countActiveCases(cases: LegalCaseRow[]): number {
-  return cases.filter((c) => c.status !== 'closed').length;
+  return cases.filter(
+    (c) =>
+      !['closed', 'pending_approval', 'rejected_by_lawyer'].includes(c.status)
+  ).length;
 }
 
 export function sumApprovedAmounts(rows: { amount: unknown }[]): number {
@@ -108,6 +162,10 @@ export function monthOverMonthChangePct(
 
 export function caseStatusLabel(status: LegalCaseStatus): { text: string; tone: 'success' | 'neutral' } {
   switch (status) {
+    case 'pending_approval':
+      return { text: 'PEND. APROBACIÓN', tone: 'neutral' };
+    case 'rejected_by_lawyer':
+      return { text: 'RECHAZADO', tone: 'neutral' };
     case 'active':
       return { text: 'ACTIVO', tone: 'neutral' };
     case 'in_court':
@@ -129,11 +187,13 @@ export function caseStatusLabel(status: LegalCaseStatus): { text: string; tone: 
 
 export function caseStatusIcon(
   status: LegalCaseStatus
-): 'document-text-outline' | 'cash-outline' | 'time-outline' | 'flash-outline' | 'hammer-outline' {
+): 'document-text-outline' | 'cash-outline' | 'time-outline' | 'flash-outline' | 'hammer-outline' | 'hourglass-outline' | 'close-circle-outline' {
   if (status === 'paid') return 'cash-outline';
   if (status === 'drafting') return 'time-outline';
   if (status === 'active') return 'flash-outline';
   if (status === 'in_court') return 'hammer-outline';
+  if (status === 'pending_approval') return 'hourglass-outline';
+  if (status === 'rejected_by_lawyer') return 'close-circle-outline';
   return 'document-text-outline';
 }
 
@@ -203,6 +263,7 @@ export async function hasApprovedFeeForLawyer(
 }
 
 /** Opciones de estado para edición abogado (casos) */
+/** Estados editables manualmente (sin `pending_approval`: usar Aprobar/Rechazar en el detalle). */
 export const CASE_STATUS_EDIT_OPTIONS: { value: LegalCaseStatus; label: string }[] = [
   { value: 'active', label: 'Activo' },
   { value: 'consulting', label: 'Consulta' },
@@ -211,6 +272,7 @@ export const CASE_STATUS_EDIT_OPTIONS: { value: LegalCaseStatus; label: string }
   { value: 'in_court', label: 'En tribunal' },
   { value: 'paid', label: 'Pagado' },
   { value: 'closed', label: 'Cerrado' },
+  { value: 'rejected_by_lawyer', label: 'Rechazado (oferta)' },
 ];
 
 export async function updateLawyerCase(

@@ -28,6 +28,7 @@ import LawyerPaymentScreen from './client/LawyerPaymentScreen';
 import type { DirectoryLawyer } from './client/LawyerDirectoryTab';
 import CreateCaseScreen, { type CreateCaseLawyer } from './CreateCaseScreen';
 import { hasApprovedFeeForLawyer } from '../lib/legalDashboard';
+import { hasOpenConnectionCreditForLawyer } from '../lib/connectionCredits';
 
 type TabType = 'chat' | 'directorio' | 'casos' | 'pagos' | 'perfil';
 
@@ -97,6 +98,7 @@ export default function ClientChatScreen() {
   const [lawyersByMessage, setLawyersByMessage] = useState<Record<string, Lawyer[]>>({});
   const [loadingLawyersFor, setLoadingLawyersFor] = useState<string | null>(null);
   const [createCaseLawyer, setCreateCaseLawyer] = useState<CreateCaseLawyer | null>(null);
+  const [createCaseDeductCredit, setCreateCaseDeductCredit] = useState(false);
   const [contactChecking, setContactChecking] = useState(false);
   const [paymentLawyer, setPaymentLawyer] = useState<DirectoryLawyer | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -134,14 +136,18 @@ export default function ClientChatScreen() {
 
     setContactChecking(true);
     try {
-      const approved = await hasApprovedFeeForLawyer(clientId, lawyer.id);
-      if (!approved) {
+      const [approved, credit] = await Promise.all([
+        hasApprovedFeeForLawyer(clientId, lawyer.id),
+        hasOpenConnectionCreditForLawyer(clientId, lawyer.id),
+      ]);
+      if (!approved && !credit) {
         Alert.alert(
-          'Pago pendiente',
-          'El contacto con el abogado se habilita cuando el administrador verifica tu pago del fee en la app. Revisa la pestaña Pagos o sube el comprobante si aún no lo has hecho.'
+          'Pago o cupón requerido',
+          'El contacto se habilita cuando el administrador verifica tu pago del fee, o si tienes un cupón de conexión activo para la misma especialidad (por un caso rechazado). Revisa Pagos o Mis casos.'
         );
         return;
       }
+      setCreateCaseDeductCredit(!approved && credit);
       setCreateCaseLawyer(lawyer);
     } finally {
       setContactChecking(false);
@@ -524,13 +530,14 @@ export default function ClientChatScreen() {
             <LawyerDirectoryTab
               clientId={clientId}
               onOpenPayment={(l) => setPaymentLawyer(l)}
-              onContactReady={(l) =>
+              onContactReady={(l, meta) => {
+                setCreateCaseDeductCredit(meta.deductConnectionCredit);
                 setCreateCaseLawyer({
                   id: l.id,
                   full_name: l.full_name,
                   phone: l.phone,
-                })
-              }
+                });
+              }}
             />
           </View>
         ) : activeTab === 'casos' && clientId ? (
@@ -676,12 +683,25 @@ export default function ClientChatScreen() {
       {createCaseLawyer && clientId ? (
         <CreateCaseScreen
           visible
+          deductConnectionCredit={createCaseDeductCredit}
           lawyer={createCaseLawyer}
           clientId={clientId}
           clientDisplayName={profile?.full_name?.trim() || 'Cliente'}
-          onClose={() => setCreateCaseLawyer(null)}
-          onCaseCreated={({ title, lawyer }) => {
+          onClose={() => {
             setCreateCaseLawyer(null);
+            setCreateCaseDeductCredit(false);
+          }}
+          onCaseCreated={({ title, lawyer, status }) => {
+            setCreateCaseLawyer(null);
+            setCreateCaseDeductCredit(false);
+            if (status === 'pending_approval') {
+              Alert.alert(
+                'Solicitud enviada',
+                'Tu caso quedó pendiente de aprobación del abogado. Cuando lo acepte, podrás abrir WhatsApp desde Mis casos para contactarle.',
+                [{ text: 'Entendido' }]
+              );
+              return;
+            }
             openWhatsAppWithCaseTitle(lawyer, title);
           }}
         />

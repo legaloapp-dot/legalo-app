@@ -7,6 +7,7 @@ import {
   Users,
   Scale,
   CreditCard,
+  FolderOpen,
   LogOut,
 } from "lucide-react";
 import { signOutAction } from "@/actions/auth";
@@ -15,6 +16,7 @@ const links = [
   { href: "/dashboard", label: "Resumen", icon: LayoutDashboard },
   { href: "/dashboard/clientes", label: "Clientes", icon: Users },
   { href: "/dashboard/abogados", label: "Abogados", icon: Scale },
+  { href: "/dashboard/casos", label: "Casos", icon: FolderOpen },
   { href: "/dashboard/pagos", label: "Pagos", icon: CreditCard },
 ];
 

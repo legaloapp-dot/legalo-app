@@ -1,4 +1,14 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from './supabase';
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binaryString = globalThis.atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
 
 export async function getLatestTransactionForPair(
   clientId: string,
@@ -37,9 +47,10 @@ export async function uploadReceiptAndCreateTransaction(
   const ext =
     mimeType?.includes('png') ? 'png' : mimeType?.includes('webp') ? 'webp' : 'jpg';
   const path = `${clientId}/${lawyerId}-${Date.now()}.${ext}`;
-  const res = await fetch(localUri);
-  const blob = await res.blob();
-  const { error: uErr } = await supabase.storage.from('receipts').upload(path, blob, {
+  // RN: fetch(file://...) suele fallar con "Network request failed"; leemos en base64.
+  const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' });
+  const buffer = base64ToArrayBuffer(base64);
+  const { error: uErr } = await supabase.storage.from('receipts').upload(path, buffer, {
     contentType: mimeType || 'image/jpeg',
     cacheControl: '3600',
   });
