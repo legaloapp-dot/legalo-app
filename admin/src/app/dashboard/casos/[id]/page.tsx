@@ -1,13 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminHeader } from "@/components/layout/AdminHeader";
-import {
-  getCaseById,
-  updateCaseAction,
-  deleteCaseAction,
-  CASE_STATUSES,
-  type CaseStatus,
-} from "@/actions/cases";
+import { getCaseById, updateCaseAction, deleteCaseAction } from "@/actions/cases";
+import { CASE_STATUSES, type CaseStatus } from "@/lib/caseConstants";
 import { listClientsWithEmail } from "@/actions/clients";
 import { listLawyersWithEmail } from "@/actions/lawyers";
 import { DeleteButton } from "@/components/DeleteButton";
