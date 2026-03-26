@@ -43,7 +43,7 @@ export async function uploadReceiptAndCreateTransaction(
   amountUsd: number,
   localUri: string,
   mimeType: string | undefined
-): Promise<void> {
+): Promise<string> {
   const ext =
     mimeType?.includes('png') ? 'png' : mimeType?.includes('webp') ? 'webp' : 'jpg';
   const path = `${clientId}/${lawyerId}-${Date.now()}.${ext}`;
@@ -56,12 +56,18 @@ export async function uploadReceiptAndCreateTransaction(
   });
   if (uErr) throw uErr;
 
-  const { error: tErr } = await supabase.from('transactions').insert({
-    client_id: clientId,
-    lawyer_id: lawyerId,
-    amount: amountUsd,
-    status: 'pending',
-    receipt_url: path,
-  });
+  const { data: row, error: tErr } = await supabase
+    .from('transactions')
+    .insert({
+      client_id: clientId,
+      lawyer_id: lawyerId,
+      amount: amountUsd,
+      status: 'pending',
+      receipt_url: path,
+    })
+    .select('id')
+    .single();
   if (tErr) throw tErr;
+  if (!row?.id) throw new Error('No se obtuvo el id de la transacción.');
+  return row.id as string;
 }

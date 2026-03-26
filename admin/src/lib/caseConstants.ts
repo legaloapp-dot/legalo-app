@@ -1,7 +1,9 @@
 /** Debe coincidir con `cases_status_check` en Supabase. */
 export const CASE_STATUSES = [
+  "awaiting_payment",
   "pending_approval",
   "rejected_by_lawyer",
+  "reassignment_pending",
   "active",
   "in_court",
   "pending",

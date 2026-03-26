@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminHeader } from "@/components/layout/AdminHeader";
-import { getLawyerById, updateLawyerAction } from "@/actions/lawyers";
+import { getLawyerById, updateLawyerAction, updateLawyerSubscriptionAction } from "@/actions/lawyers";
 import { LawyerVerificationActions } from "@/components/LawyerVerificationActions";
 import { getLawyerVerificationDisplay } from "@/lib/lawyerVerificationDisplay";
 import { ArrowLeft } from "lucide-react";
@@ -15,6 +15,11 @@ export default async function AbogadoDetallePage({
   const data = await getLawyerById(id);
   if (!data) notFound();
   const { profile, email, inpreUrl, cedulaUrl } = data;
+  const sub = profile as {
+    plan?: string | null;
+    subscription_expires_at?: string | null;
+    subscription_paid_at?: string | null;
+  };
   const verificationUi = getLawyerVerificationDisplay({
     is_verified: profile.is_verified,
     lawyer_onboarding_step: profile.lawyer_onboarding_step ?? null,
@@ -48,6 +53,67 @@ export default async function AbogadoDetallePage({
             null
           }
         />
+      </div>
+
+      <div className="mb-8 max-w-xl rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
+        <h2 className="text-base font-bold text-slate-900">Suscripción</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Asigna el plan, la fecha de fin de vigencia y la fecha del último pago registrado.
+        </p>
+        <form action={updateLawyerSubscriptionAction} className="mt-4 space-y-4">
+          <input type="hidden" name="id" value={profile.id} />
+          <div>
+            <label htmlFor="plan" className="mb-1 block text-xs font-semibold text-slate-600">
+              Plan
+            </label>
+            <select
+              id="plan"
+              name="plan"
+              defaultValue={sub.plan ?? "basic"}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            >
+              <option value="trial">Periodo de prueba</option>
+              <option value="premium">Premium (suscripción activa / pagó)</option>
+              <option value="basic">Básico (sin prioridad en directorio)</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="subscription_expires_at" className="mb-1 block text-xs font-semibold text-slate-600">
+              Fin de vigencia (prueba o suscripción)
+            </label>
+            <input
+              id="subscription_expires_at"
+              name="subscription_expires_at"
+              type="datetime-local"
+              defaultValue={
+                sub.subscription_expires_at
+                  ? new Date(sub.subscription_expires_at).toISOString().slice(0, 16)
+                  : ""
+              }
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-slate-400">Vacío = sin fecha guardada.</p>
+          </div>
+          <div>
+            <label htmlFor="subscription_paid_at" className="mb-1 block text-xs font-semibold text-slate-600">
+              Fecha del último pago
+            </label>
+            <input
+              id="subscription_paid_at"
+              name="subscription_paid_at"
+              type="date"
+              defaultValue={sub.subscription_paid_at ? sub.subscription_paid_at.slice(0, 10) : ""}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
+            <p className="mt-1 text-xs text-slate-400">Usa los filtros de la lista por este campo.</p>
+          </div>
+          <button
+            type="submit"
+            className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-indigo-500"
+          >
+            Guardar suscripción
+          </button>
+        </form>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">

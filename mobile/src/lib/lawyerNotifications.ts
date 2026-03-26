@@ -1,6 +1,10 @@
 import { supabase } from './supabase';
 
-export type LawyerNotificationType = 'account_approved' | 'new_case' | 'new_lead';
+export type LawyerNotificationType =
+  | 'account_approved'
+  | 'new_case'
+  | 'new_lead'
+  | 'case_rated';
 
 export interface LawyerNotificationRow {
   id: string;

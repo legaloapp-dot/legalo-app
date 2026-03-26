@@ -64,11 +64,9 @@ export function useLawyerDashboardData(lawyerId: string | undefined) {
         );
       }
 
-      const allFailed = c.status === 'rejected' && l.status === 'rejected' && a.status === 'rejected';
-
       setState({
         loading: false,
-        error: allFailed ? parts.join(' · ') : null,
+        error: parts.length > 0 ? parts.join(' · ') : null,
         cases,
         leads,
         activity,

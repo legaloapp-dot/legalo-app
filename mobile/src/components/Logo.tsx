@@ -6,17 +6,18 @@ interface LogoProps {
   style?: ViewStyle;
 }
 
+/** Logo horizontal oficial (icono + wordmark) sobre fondo transparente o negro. */
 const SIZES = {
-  small: { width: 80, height: 32 },
-  medium: { width: 120, height: 48 },
-  large: { width: 160, height: 64 },
+  small: { width: 112, height: 36 },
+  medium: { width: 152, height: 48 },
+  large: { width: 192, height: 60 },
 };
 
 export default function Logo({ size = 'medium', style }: LogoProps) {
   const dimensions = SIZES[size];
   return (
     <Image
-      source={require('../../assets/icon.png')}
+      source={require('../../assets/logo.png')}
       style={[styles.logo, dimensions, style]}
       resizeMode="contain"
     />

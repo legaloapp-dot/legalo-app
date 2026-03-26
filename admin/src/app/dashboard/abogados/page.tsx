@@ -12,14 +12,43 @@ import {
 } from "@/lib/lawyerVerificationDisplay";
 import { Pencil } from "lucide-react";
 
-export default async function AbogadosPage() {
-  const rows = await listLawyersWithEmail();
+function planEs(p: string | null | undefined) {
+  if (p === "premium") return "Premium";
+  if (p === "trial") return "Prueba";
+  if (p === "basic") return "Básico";
+  return "—";
+}
+
+function fmtDate(iso: string | null | undefined) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("es-VE", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+export default async function AbogadosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string; paid_from?: string; paid_to?: string }>;
+}) {
+  const sp = await searchParams;
+  const rows = await listLawyersWithEmail({
+    plan: sp.plan,
+    paidFrom: sp.paid_from,
+    paidTo: sp.paid_to,
+  });
 
   return (
     <>
       <AdminHeader
         title="Abogados"
-        description="Gestiona abogados; el detalle incluye documentos y verificación."
+        description="Gestiona abogados, suscripción y verificación."
       />
 
       <div className="mb-10 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
@@ -68,6 +97,64 @@ export default async function AbogadosPage() {
         </form>
       </div>
 
+      <form
+        method="get"
+        className="mb-6 flex flex-wrap items-end gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm"
+      >
+        <div>
+          <label htmlFor="plan" className="mb-1 block text-xs font-semibold text-slate-600">
+            Plan de suscripción
+          </label>
+          <select
+            id="plan"
+            name="plan"
+            defaultValue={sp.plan ?? "all"}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+          >
+            <option value="all">Todos</option>
+            <option value="trial">Prueba</option>
+            <option value="premium">Premium</option>
+            <option value="basic">Básico</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="paid_from" className="mb-1 block text-xs font-semibold text-slate-600">
+            Fecha de pago desde
+          </label>
+          <input
+            id="paid_from"
+            name="paid_from"
+            type="date"
+            defaultValue={sp.paid_from ?? ""}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label htmlFor="paid_to" className="mb-1 block text-xs font-semibold text-slate-600">
+            Fecha de pago hasta
+          </label>
+          <input
+            id="paid_to"
+            name="paid_to"
+            type="date"
+            defaultValue={sp.paid_to ?? ""}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+          />
+        </div>
+        <button
+          type="submit"
+          className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700"
+        >
+          Filtrar
+        </button>
+        <Link
+          href="/dashboard/abogados"
+          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Limpiar
+        </Link>
+      </form>
+
       <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <table className="admin-table">
           <thead>
@@ -75,6 +162,9 @@ export default async function AbogadosPage() {
               <th>Nombre</th>
               <th>Email</th>
               <th>Especialidad</th>
+              <th>Plan</th>
+              <th>Prueba / vigencia</th>
+              <th>Último pago</th>
               <th>Estado verificación</th>
               <th className="w-44">Acciones</th>
             </tr>
@@ -82,8 +172,8 @@ export default async function AbogadosPage() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-10 text-center text-slate-500">
-                  No hay abogados.
+                <td colSpan={8} className="py-10 text-center text-slate-500">
+                  No hay abogados con estos filtros.
                 </td>
               </tr>
             ) : (
@@ -92,6 +182,13 @@ export default async function AbogadosPage() {
                   <td className="font-medium text-slate-800">{r.full_name ?? "—"}</td>
                   <td className="font-mono text-xs">{r.email}</td>
                   <td>{r.specialty ?? "—"}</td>
+                  <td className="text-sm font-semibold text-slate-800">{planEs(r.plan as string | null)}</td>
+                  <td className="text-xs text-slate-600">
+                    {fmtDate((r as { subscription_expires_at?: string | null }).subscription_expires_at)}
+                  </td>
+                  <td className="text-xs text-slate-600">
+                    {fmtDate((r as { subscription_paid_at?: string | null }).subscription_paid_at)}
+                  </td>
                   <td>
                     {(() => {
                       const v = getLawyerVerificationDisplay({

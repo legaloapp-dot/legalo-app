@@ -265,6 +265,10 @@ create table if not exists public.cases (
   client_display_name text,
   status text not null default 'active'
     check (status in (
+      'awaiting_payment',
+      'pending_approval',
+      'rejected_by_lawyer',
+      'reassignment_pending',
       'active',
       'in_court',
       'pending',
@@ -273,6 +277,7 @@ create table if not exists public.cases (
       'consulting',
       'paid'
     )),
+  transaction_id uuid references public.transactions(id) on delete set null,
   last_activity text,
   last_activity_at timestamptz default now(),
   created_at timestamptz default now()
@@ -342,6 +347,111 @@ create policy "Clients update own cases"
   on public.cases for update
   using (auth.uid() = client_id);
 
+-- Estados de caso + flujo Flash (awaiting_payment, reassignment_pending) — migrations 20260330140000 + 20260331180000
+alter table public.cases add column if not exists transaction_id uuid references public.transactions(id) on delete set null;
+create index if not exists cases_transaction_id_idx on public.cases (transaction_id);
+
+alter table public.cases add column if not exists lawyer_observations text;
+
+alter table public.cases drop constraint if exists cases_status_check;
+alter table public.cases add constraint cases_status_check check (
+  status in (
+    'awaiting_payment',
+    'pending_approval',
+    'rejected_by_lawyer',
+    'reassignment_pending',
+    'active',
+    'in_court',
+    'pending',
+    'closed',
+    'drafting',
+    'consulting',
+    'paid'
+  )
+);
+
+create or replace function public.notify_lawyer_on_new_case()
+returns trigger as $$
+begin
+  if new.status = 'awaiting_payment' then
+    return new;
+  end if;
+  insert into public.lawyer_notifications (lawyer_id, type, title, body, ref_id)
+  values (
+    new.lawyer_id,
+    'new_case',
+    'Nueva solicitud de caso',
+    trim(
+      coalesce(new.client_display_name, 'Un cliente')
+      || ' envió el caso: '
+      || coalesce(new.title, 'Sin título')
+    ),
+    new.id
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.promote_case_when_payment_approved()
+returns trigger as $$
+begin
+  if tg_op = 'UPDATE' and new.status = 'approved' and old.status is distinct from 'approved' then
+    update public.cases
+    set
+      status = 'pending_approval',
+      last_activity = 'Pago verificado: pendiente de tu aprobación',
+      last_activity_at = now()
+    where transaction_id = new.id and status = 'awaiting_payment';
+
+    insert into public.lawyer_notifications (lawyer_id, type, title, body, ref_id)
+    select
+      c.lawyer_id,
+      'new_case',
+      'Nuevo caso pagado',
+      'Revisa los detalles del caso para aceptar o rechazar la solicitud.',
+      c.id
+    from public.cases c
+    where c.transaction_id = new.id and c.status = 'pending_approval';
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists tr_promote_case_on_payment on public.transactions;
+create trigger tr_promote_case_on_payment
+  after update on public.transactions
+  for each row execute function public.promote_case_when_payment_approved();
+
+-- Si el pago ya estaba approved antes de insertar el caso, promover en el mismo INSERT.
+create or replace function public.cases_sync_with_transaction_on_insert()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  tx_status text;
+begin
+  if new.transaction_id is not null and new.status = 'awaiting_payment' then
+    select t.status into tx_status
+    from public.transactions t
+    where t.id = new.transaction_id;
+
+    if tx_status = 'approved' then
+      new.status := 'pending_approval';
+      new.last_activity := 'Pago verificado: pendiente de tu aprobación';
+      new.last_activity_at := now();
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tr_cases_sync_tx_on_insert on public.cases;
+create trigger tr_cases_sync_tx_on_insert
+  before insert on public.cases
+  for each row execute function public.cases_sync_with_transaction_on_insert();
+
 -- === Notificaciones abogado (mismo contenido que migrations/20260329120000_lawyer_notifications.sql) ===
 
 create table if not exists public.lawyer_notifications (
@@ -394,24 +504,7 @@ create trigger tr_profiles_lawyer_verified_notify
   for each row
   execute function public.notify_lawyer_on_verification();
 
-create or replace function public.notify_lawyer_on_new_case()
-returns trigger as $$
-begin
-  insert into public.lawyer_notifications (lawyer_id, type, title, body, ref_id)
-  values (
-    new.lawyer_id,
-    'new_case',
-    'Nueva solicitud de caso',
-    trim(
-      coalesce(new.client_display_name, 'Un cliente')
-      || ' envió el caso: '
-      || coalesce(new.title, 'Sin título')
-    ),
-    new.id
-  );
-  return new;
-end;
-$$ language plpgsql security definer;
+-- notify_lawyer_on_new_case() ya definida arriba (omite notificación si status = awaiting_payment).
 
 drop trigger if exists tr_cases_notify_lawyer on public.cases;
 create trigger tr_cases_notify_lawyer
@@ -506,3 +599,304 @@ create policy "Users delete own avatar"
     bucket_id = 'avatars'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- === Notificaciones cliente — migrations/20260402120000_client_notifications.sql ===
+
+create table if not exists public.client_notifications (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references public.profiles(id) on delete cascade,
+  type text not null check (type in (
+    'payment_approved',
+    'payment_rejected',
+    'connection_coupon',
+    'case_accepted',
+    'case_rejected'
+  )),
+  title text not null,
+  body text,
+  ref_id uuid,
+  read_at timestamptz,
+  created_at timestamptz default now()
+);
+
+create index if not exists client_notifications_client_created_idx
+  on public.client_notifications (client_id, created_at desc);
+
+alter table public.client_notifications enable row level security;
+
+drop policy if exists "Clients read own notifications" on public.client_notifications;
+create policy "Clients read own notifications"
+  on public.client_notifications for select
+  using (auth.uid() = client_id);
+
+drop policy if exists "Clients update own notifications" on public.client_notifications;
+create policy "Clients update own notifications"
+  on public.client_notifications for update
+  using (auth.uid() = client_id);
+
+create or replace function public.notify_client_on_transaction_status()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE' and new.status is distinct from old.status then
+    if new.status = 'approved' and coalesce(old.status, '') is distinct from 'approved' then
+      insert into public.client_notifications (client_id, type, title, body, ref_id)
+      values (
+        new.client_id,
+        'payment_approved',
+        'Pago confirmado',
+        'Tu comprobante fue aprobado. El abogado podrá revisar tu caso cuando corresponda.',
+        new.id
+      );
+    elsif new.status = 'rejected' and coalesce(old.status, '') is distinct from 'rejected' then
+      insert into public.client_notifications (client_id, type, title, body, ref_id)
+      values (
+        new.client_id,
+        'payment_rejected',
+        'Pago no verificado',
+        'Tu comprobante no fue aprobado. Revisa la pestaña Pagos o sube un nuevo comprobante.',
+        new.id
+      );
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tr_tx_notify_client on public.transactions;
+create trigger tr_tx_notify_client
+  after update on public.transactions
+  for each row
+  execute function public.notify_client_on_transaction_status();
+
+create or replace function public.notify_client_on_case_decision()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE' and new.status is distinct from old.status then
+    if old.status = 'pending_approval' and new.status = 'active' then
+      insert into public.client_notifications (client_id, type, title, body, ref_id)
+      values (
+        new.client_id,
+        'case_accepted',
+        'Caso aceptado',
+        'El abogado aceptó tu caso «' || left(trim(coalesce(new.title, 'Sin título')), 120)
+          || '». Ya puedes contactarle por WhatsApp desde Mis casos.',
+        new.id
+      );
+    elsif old.status = 'pending_approval' and new.status in ('reassignment_pending', 'rejected_by_lawyer') then
+      insert into public.client_notifications (client_id, type, title, body, ref_id)
+      values (
+        new.client_id,
+        'case_rejected',
+        'Caso no aceptado',
+        'El abogado no aceptó tomar tu caso «' || left(trim(coalesce(new.title, 'Sin título')), 120)
+          || '». En Mis casos puedes activar un cupón de conexión o solicitar reembolso.',
+        new.id
+      );
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tr_cases_notify_client on public.cases;
+create trigger tr_cases_notify_client
+  after update on public.cases
+  for each row
+  execute function public.notify_client_on_case_decision();
+
+create or replace function public.notify_client_on_connection_coupon()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' and new.status = 'open' and new.source_case_id is not null then
+    insert into public.client_notifications (client_id, type, title, body, ref_id)
+    values (
+      new.client_id,
+      'connection_coupon',
+      'Cupón de conexión',
+      'Tienes un cupón para contactar a otro abogado de la especialidad «'
+        || left(trim(coalesce(new.specialty, '')), 80)
+        || '» sin pagar de nuevo el fee. Úsalo en el directorio.',
+      new.id
+    );
+  end if;
+  return new;
+end;
+$$;
+
+do $cc$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'connection_credits'
+  ) then
+    drop trigger if exists tr_cc_notify_client on public.connection_credits;
+    create trigger tr_cc_notify_client
+      after insert on public.connection_credits
+      for each row
+      execute function public.notify_client_on_connection_coupon();
+  end if;
+end;
+$cc$;
+
+-- === Notificación abogado: caso finalizado y calificado (migrations/20260405120000_lawyer_notify_case_rated.sql) ===
+
+alter table public.lawyer_notifications drop constraint if exists lawyer_notifications_type_check;
+
+alter table public.lawyer_notifications
+  add constraint lawyer_notifications_type_check
+  check (type in (
+    'account_approved',
+    'new_case',
+    'new_lead',
+    'case_rated'
+  ));
+
+create or replace function public.notify_lawyer_on_case_rated()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_stars int;
+  v_title text;
+  v_body text;
+begin
+  if tg_op = 'UPDATE'
+     and old.status = 'active'
+     and new.status = 'closed'
+     and old.client_rating is null
+     and new.client_rating is not null
+     and new.client_rating between 1 and 5
+  then
+    v_stars := new.client_rating;
+    v_title := 'Caso finalizado y calificado';
+    v_body :=
+      'El cliente cerró el caso «'
+      || left(trim(coalesce(new.title, 'Sin título')), 120)
+      || '» con '
+      || v_stars::text
+      || case when v_stars = 1 then ' estrella' else ' estrellas' end
+      || '.'
+      || case
+           when new.client_rating_comment is not null
+                and length(trim(new.client_rating_comment)) > 0
+           then ' Comentario: ' || left(trim(new.client_rating_comment), 300)
+           else ''
+         end;
+
+    insert into public.lawyer_notifications (lawyer_id, type, title, body, ref_id)
+    values (new.lawyer_id, 'case_rated', v_title, v_body, new.id);
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists tr_cases_notify_lawyer_rated on public.cases;
+create trigger tr_cases_notify_lawyer_rated
+  after update on public.cases
+  for each row
+  execute function public.notify_lawyer_on_case_rated();
+
+-- === Geolocalización consultorio (migrations/20260406130000_profiles_geolocation.sql) ===
+
+alter table public.profiles
+  add column if not exists latitude double precision,
+  add column if not exists longitude double precision,
+  add column if not exists location_label text;
+
+-- === Suscripción abogados (migrations/20260407120000_lawyer_subscription_trial.sql) ===
+
+alter table public.profiles
+  add column if not exists subscription_expires_at timestamptz;
+
+alter table public.profiles
+  add column if not exists plan text;
+
+alter table public.profiles drop constraint if exists profiles_plan_check;
+alter table public.profiles
+  add constraint profiles_plan_check
+  check (plan is null or plan in ('trial', 'premium', 'basic'));
+
+create or replace function public.profiles_on_lawyer_verified_trial()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.role = 'lawyer'
+     and coalesce(old.is_verified, false) = false
+     and new.is_verified = true
+     and coalesce(old.plan, '') <> 'premium'
+     and coalesce(new.plan, '') <> 'premium'
+  then
+    new.subscription_expires_at := (now() at time zone 'utc') + interval '30 days';
+    new.plan := 'trial';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tr_profiles_lawyer_verified_trial on public.profiles;
+create trigger tr_profiles_lawyer_verified_trial
+  before update of is_verified on public.profiles
+  for each row
+  execute function public.profiles_on_lawyer_verified_trial();
+
+update public.profiles
+set
+  subscription_expires_at = (now() at time zone 'utc') + interval '30 days',
+  plan = 'trial'
+where role = 'lawyer'
+  and is_verified = true
+  and subscription_expires_at is null;
+
+update public.profiles
+set plan = 'trial'
+where role = 'lawyer'
+  and is_verified = true
+  and plan is null
+  and subscription_expires_at is not null;
+
+create or replace function public.refresh_lawyer_subscription()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'No autenticado';
+  end if;
+
+  update public.profiles
+  set plan = 'basic'
+  where id = auth.uid()
+    and role = 'lawyer'
+    and plan = 'trial'
+    and subscription_expires_at is not null
+    and subscription_expires_at < (now() at time zone 'utc');
+
+end;
+$$;
+
+grant execute on function public.refresh_lawyer_subscription() to authenticated;
+
+-- === Fecha último pago suscripción abogado (migrations/20260408120000_subscription_paid_at.sql) ===
+
+alter table public.profiles
+  add column if not exists subscription_paid_at timestamptz;

@@ -15,6 +15,7 @@ import {
   fetchClientCases,
   caseStatusLabel,
   caseStatusIcon,
+  CASE_STATUSES_ELIGIBLE_FOR_DIRECT_CONTACT,
   type LegalCaseRow,
   type LegalCaseStatus,
 } from '../../lib/legalDashboard';
@@ -25,8 +26,10 @@ import {
   getCasePostRejectionChoice,
   claimConnectionCreditForRejectedCase,
   requestRefundForRejectedCase,
+  isCaseRejectedForCredit,
 } from '../../lib/connectionCredits';
 import { DEFAULT_FEE_USD } from '../../config/mobilePayment';
+import ClientCaseDetailModal from './ClientCaseDetailModal';
 
 function digitsForWhatsApp(phone: string): string {
   let d = phone.replace(/\D/g, '');
@@ -36,7 +39,7 @@ function digitsForWhatsApp(phone: string): string {
 }
 
 function canOpenWhatsApp(status: LegalCaseStatus): boolean {
-  return status !== 'pending_approval' && status !== 'rejected_by_lawyer';
+  return CASE_STATUSES_ELIGIBLE_FOR_DIRECT_CONTACT.includes(status);
 }
 
 export default function ClientCasesTab({ clientId }: { clientId: string }) {
@@ -51,6 +54,7 @@ export default function ClientCasesTab({ clientId }: { clientId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [actionCaseId, setActionCaseId] = useState<string | null>(null);
+  const [detailCase, setDetailCase] = useState<LegalCaseRow | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -71,7 +75,7 @@ export default function ClientCasesTab({ clientId }: { clientId: string }) {
       } else {
         setLawyersById({});
       }
-      const rejected = data.filter((c) => c.status === 'rejected_by_lawyer');
+      const rejected = data.filter((c) => isCaseRejectedForCredit(c.status));
       const choices: Record<string, 'credit' | 'refund' | null> = {};
       await Promise.all(
         rejected.map(async (c) => {
@@ -193,17 +197,39 @@ export default function ClientCasesTab({ clientId }: { clientId: string }) {
                   </Text>
                 </View>
 
-                {c.status === 'pending_approval' ? (
+                <TouchableOpacity
+                  style={styles.detailBtn}
+                  onPress={() => setDetailCase(c)}
+                  activeOpacity={0.88}
+                >
+                  <Ionicons name="document-text-outline" size={18} color={colors.chatSecondary} />
+                  <Text style={styles.detailBtnText}>Ver detalle del caso</Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.chatOutline} />
+                </TouchableOpacity>
+
+                {c.status === 'awaiting_payment' ? (
                   <Text style={styles.hint}>
-                    Pendiente de aprobación del abogado. Cuando lo acepte, podrás usar WhatsApp aquí.
+                    Validando tu pago. Cuando el administrador lo confirme, el abogado verá tu caso y
+                    podrá aceptarlo.
                   </Text>
                 ) : null}
 
-                {c.status === 'rejected_by_lawyer' ? (
+                {c.status === 'pending_approval' ? (
+                  <Text style={styles.hint}>
+                    Pago confirmado: pendiente de que el abogado acepte el caso. Cuando lo acepte,
+                    podrás usar WhatsApp aquí.
+                  </Text>
+                ) : null}
+
+                {isCaseRejectedForCredit(c.status) ? (
                   <View style={styles.rejectionBlock}>
                     {choice === null ? (
                       <>
-                        <Text style={styles.rejectionTitle}>El abogado no aceptó este caso</Text>
+                        <Text style={styles.rejectionTitle}>
+                          {c.status === 'reassignment_pending'
+                            ? 'Reasignación: el abogado no tomará este caso'
+                            : 'El abogado no aceptó este caso'}
+                        </Text>
                         <Text style={styles.rejectionSub}>
                           Tu pago del fee puede quedar como cupón para otro abogado de la misma
                           especialidad, o puedes solicitar reembolso.
@@ -262,6 +288,14 @@ export default function ClientCasesTab({ clientId }: { clientId: string }) {
           );
         })
       )}
+
+      <ClientCaseDetailModal
+        visible={detailCase != null}
+        caseRow={detailCase}
+        lawyerName={detailCase ? lawyersById[detailCase.lawyer_id]?.full_name?.trim() || 'Abogado' : ''}
+        onClose={() => setDetailCase(null)}
+        onFinalized={() => void load()}
+      />
     </ScrollView>
   );
 }
@@ -362,4 +396,22 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   waBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  detailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.chatSecondary + '55',
+    backgroundColor: colors.chatPrimaryContainer + '88',
+  },
+  detailBtnText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.chatSecondary,
+  },
 });

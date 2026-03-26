@@ -12,24 +12,26 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { relativeTimeEs } from '../lib/format';
-import type { LawyerNotificationRow, LawyerNotificationType } from '../lib/lawyerNotifications';
+import type { ClientNotificationRow, ClientNotificationType } from '../lib/clientNotifications';
 
-function iconForType(t: LawyerNotificationType): keyof typeof Ionicons.glyphMap {
+function iconForType(t: ClientNotificationType): keyof typeof Ionicons.glyphMap {
   switch (t) {
-    case 'account_approved':
+    case 'payment_approved':
       return 'checkmark-circle';
-    case 'new_case':
+    case 'payment_rejected':
+      return 'close-circle';
+    case 'connection_coupon':
+      return 'ticket';
+    case 'case_accepted':
       return 'briefcase';
-    case 'new_lead':
-      return 'person-add';
-    case 'case_rated':
-      return 'star';
+    case 'case_rejected':
+      return 'alert-circle';
     default:
       return 'notifications';
   }
 }
 
-export default function LawyerNotificationsModal({
+export default function ClientNotificationsModal({
   visible,
   onClose,
   items,
@@ -39,7 +41,7 @@ export default function LawyerNotificationsModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  items: LawyerNotificationRow[];
+  items: ClientNotificationRow[];
   loading: boolean;
   onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
@@ -51,7 +53,7 @@ export default function LawyerNotificationsModal({
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} hitSlop={12} style={styles.headerBtn}>
-            <Ionicons name="close" size={26} color={colors.primary} />
+            <Ionicons name="close" size={26} color={colors.chatPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Notificaciones</Text>
           {unread > 0 ? (
@@ -65,14 +67,15 @@ export default function LawyerNotificationsModal({
 
         {loading && items.length === 0 ? (
           <View style={styles.centered}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color={colors.chatSecondary} />
           </View>
         ) : items.length === 0 ? (
           <View style={styles.centered}>
-            <Ionicons name="notifications-off-outline" size={48} color={colors.outline} />
+            <Ionicons name="notifications-off-outline" size={48} color={colors.chatOutline} />
             <Text style={styles.emptyTitle}>Sin notificaciones</Text>
             <Text style={styles.emptySub}>
-              Te avisaremos cuando verifiquen tu cuenta o cuando un cliente envíe una solicitud.
+              Te avisaremos cuando se apruebe tu pago, cuando el abogado responda a tu caso o cuando
+              tengas un cupón de conexión.
             </Text>
           </View>
         ) : (
@@ -92,7 +95,7 @@ export default function LawyerNotificationsModal({
                   }}
                 >
                   <View style={[styles.iconWrap, !read && styles.iconWrapUnread]}>
-                    <Ionicons name={iconForType(item.type)} size={22} color={colors.primary} />
+                    <Ionicons name={iconForType(item.type)} size={22} color={colors.chatSecondary} />
                   </View>
                   <View style={styles.rowBody}>
                     <Text style={[styles.rowTitle, !read && styles.rowTitleBold]}>{item.title}</Text>
@@ -111,7 +114,7 @@ export default function LawyerNotificationsModal({
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
+  safe: { flex: 1, backgroundColor: colors.chatContainer },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -119,7 +122,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: colors.outlineVariant + '44',
+    borderBottomColor: colors.chatOutlineVariant + '44',
   },
   headerBtn: { width: 72, alignItems: 'flex-start' },
   headerTitle: {
@@ -127,13 +130,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 17,
     fontWeight: '800',
-    color: colors.primary,
+    color: colors.chatPrimary,
   },
   markAllBtn: { width: 72, alignItems: 'flex-end' },
   markAllText: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.secondary,
+    color: colors.chatSecondary,
   },
   centered: {
     flex: 1,
@@ -145,13 +148,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 18,
     fontWeight: '800',
-    color: colors.primary,
+    color: colors.chatPrimary,
   },
   emptySub: {
     marginTop: 8,
     textAlign: 'center',
     fontSize: 14,
-    color: colors.onSurfaceVariant,
+    color: colors.chatOutline,
     lineHeight: 22,
   },
   list: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 },
@@ -163,49 +166,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 12,
     marginBottom: 8,
-    backgroundColor: colors.surfaceContainerLowest,
+    backgroundColor: colors.chatSurface,
     borderWidth: 1,
-    borderColor: colors.outlineVariant + '33',
+    borderColor: colors.chatOutlineVariant + '44',
   },
   rowUnread: {
-    backgroundColor: colors.primaryContainer + '55',
-    borderColor: colors.primary + '22',
+    backgroundColor: colors.chatPrimaryContainer,
+    borderColor: colors.chatSecondary + '33',
   },
   iconWrap: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surfaceContainerHigh,
+    backgroundColor: colors.chatContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconWrapUnread: {
-    backgroundColor: colors.surfaceContainerHighest,
+    backgroundColor: colors.chatPrimaryContainer,
   },
   rowBody: { flex: 1, minWidth: 0 },
   rowTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.chatOnSurface,
   },
   rowTitleBold: { fontWeight: '800' },
   rowBodyText: {
     marginTop: 4,
     fontSize: 13,
-    color: colors.onSurfaceVariant,
+    color: colors.chatOutline,
     lineHeight: 18,
   },
   rowTime: {
     marginTop: 8,
     fontSize: 11,
     fontWeight: '600',
-    color: colors.outline,
+    color: colors.chatOutline,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.chatSecondary,
     marginTop: 6,
   },
 });

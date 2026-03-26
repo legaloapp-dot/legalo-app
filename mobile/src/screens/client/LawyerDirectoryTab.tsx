@@ -10,13 +10,21 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
+  Alert,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { colors } from '../../theme/colors';
-import { hasApprovedFeeForLawyer } from '../../lib/legalDashboard';
-import { hasOpenConnectionCreditForLawyer } from '../../lib/connectionCredits';
+import { hasApprovedFeeForLawyer, hasActiveCaseWithLawyer } from '../../lib/legalDashboard';
+import {
+  getOpenConnectionCreditsInfo,
+  hasOpenConnectionCreditForLawyer,
+} from '../../lib/connectionCredits';
 import { hasPendingTransaction } from '../../lib/clientPayments';
+import { haversineKm, formatDistanceKm } from '../../lib/geo';
+import LocationAutocompleteInput from '../../components/LocationAutocompleteInput';
+import { directoryPlanSortKey } from '../../lib/subscription';
 import { LAWYER_SPECIALTY_OPTIONS } from '../lawyer-onboarding/LawyerOnboardingStep1Screen';
 
 const SPECIALTY_FILTER_OPTIONS = [
@@ -31,21 +39,33 @@ export interface DirectoryLawyer {
   phone: string | null;
   is_verified: boolean;
   avatar_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_label?: string | null;
+  /** premium primero en lista; basic al final tras prueba vencida */
+  plan?: string | null;
 }
 
 export default function LawyerDirectoryTab({
   clientId,
   onOpenPayment,
   onContactReady,
+  onOpenWhatsApp,
 }: {
   clientId: string;
   onOpenPayment: (lawyer: DirectoryLawyer) => void;
   onContactReady: (lawyer: DirectoryLawyer, meta: { deductConnectionCredit: boolean }) => void;
+  /** WhatsApp solo con al menos un caso en curso con ese abogado (no pendiente de aprobación ni cerrado). */
+  onOpenWhatsApp?: (lawyer: DirectoryLawyer) => void;
 }) {
   const [lawyers, setLawyers] = useState<DirectoryLawyer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
+  const [locationQuery, setLocationQuery] = useState('');
+  const [nearMeActive, setNearMeActive] = useState(false);
+  const [clientCoords, setClientCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [clientLocBusy, setClientLocBusy] = useState(false);
   /** '' = todas las especialidades */
   const [specialtyFilter, setSpecialtyFilter] = useState('');
   const [specialtyPickerOpen, setSpecialtyPickerOpen] = useState(false);
@@ -54,11 +74,18 @@ export default function LawyerDirectoryTab({
   const [feeApproved, setFeeApproved] = useState(false);
   const [hasConnectionCredit, setHasConnectionCredit] = useState(false);
   const [hasPending, setHasPending] = useState(false);
+  const [hasActiveCase, setHasActiveCase] = useState(false);
+  const [couponInfo, setCouponInfo] = useState<{ hasAny: boolean; specialties: string[] }>({
+    hasAny: false,
+    specialties: [],
+  });
 
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, specialty, phone, is_verified, accepting_cases, avatar_url')
+      .select(
+        'id, full_name, specialty, phone, is_verified, accepting_cases, avatar_url, latitude, longitude, location_label, plan'
+      )
       .eq('role', 'lawyer')
       .eq('is_verified', true)
       .order('full_name', { ascending: true });
@@ -89,10 +116,28 @@ export default function LawyerDirectoryTab({
     };
   }, [load]);
 
+  const refreshCouponInfo = useCallback(async () => {
+    if (!clientId) {
+      setCouponInfo({ hasAny: false, specialties: [] });
+      return;
+    }
+    try {
+      const info = await getOpenConnectionCreditsInfo(clientId);
+      setCouponInfo(info);
+    } catch {
+      setCouponInfo({ hasAny: false, specialties: [] });
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    void refreshCouponInfo();
+  }, [refreshCouponInfo]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
       await load();
+      await refreshCouponInfo();
     } finally {
       setRefreshing(false);
     }
@@ -103,42 +148,117 @@ export default function LawyerDirectoryTab({
     return o?.label ?? 'Todas las especialidades';
   }, [specialtyFilter]);
 
-  const filtered = useMemo(() => {
+  const couponSpecialtyLabels = useMemo(
+    () =>
+      couponInfo.specialties.map(
+        (s) => LAWYER_SPECIALTY_OPTIONS.find((o) => o.id === s)?.label ?? s
+      ),
+    [couponInfo.specialties]
+  );
+
+  const baseFiltered = useMemo(() => {
     let list = lawyers;
     if (specialtyFilter) {
       list = list.filter((l) => (l.specialty ?? '').trim() === specialtyFilter);
     }
     const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((l) => (l.full_name ?? '').toLowerCase().includes(q));
-  }, [lawyers, query, specialtyFilter]);
+    if (q) {
+      list = list.filter((l) => (l.full_name ?? '').toLowerCase().includes(q));
+    }
+    const locQ = locationQuery.trim().toLowerCase();
+    if (locQ) {
+      list = list.filter((l) => (l.location_label ?? '').toLowerCase().includes(locQ));
+    }
+    return list;
+  }, [lawyers, query, specialtyFilter, locationQuery]);
+
+  /** Suscripción paga primero; luego prueba; plan basic al final. */
+  const planSorted = useMemo(() => {
+    return [...baseFiltered].sort((a, b) => {
+      const d = directoryPlanSortKey(a.plan) - directoryPlanSortKey(b.plan);
+      if (d !== 0) return d;
+      return (a.full_name ?? '').localeCompare(b.full_name ?? '', 'es');
+    });
+  }, [baseFiltered]);
+
+  const directoryRows = useMemo(() => {
+    if (!nearMeActive || !clientCoords) {
+      return planSorted.map((l) => ({ lawyer: l, distanceKm: null as number | null }));
+    }
+    const { lat: clat, lng: clng } = clientCoords;
+    return planSorted
+      .map((l) => {
+        const lat = l.latitude != null ? Number(l.latitude) : null;
+        const lng = l.longitude != null ? Number(l.longitude) : null;
+        const distanceKm =
+          lat != null && lng != null && !Number.isNaN(lat) && !Number.isNaN(lng)
+            ? haversineKm(clat, clng, lat, lng)
+            : null;
+        return { lawyer: l, distanceKm };
+      })
+      .sort((a, b) => {
+        const tp = directoryPlanSortKey(a.lawyer.plan) - directoryPlanSortKey(b.lawyer.plan);
+        if (tp !== 0) return tp;
+        if (a.distanceKm != null && b.distanceKm != null) return a.distanceKm - b.distanceKm;
+        if (a.distanceKm != null) return -1;
+        if (b.distanceKm != null) return 1;
+        return (a.lawyer.full_name ?? '').localeCompare(b.lawyer.full_name ?? '', 'es');
+      });
+  }, [planSorted, nearMeActive, clientCoords]);
+
+  const enableNearMe = useCallback(async () => {
+    setClientLocBusy(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permisos', 'Activa la ubicación para ordenar abogados por cercanía.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setClientCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      setNearMeActive(true);
+    } catch (e) {
+      Alert.alert('Ubicación', e instanceof Error ? e.message : 'No se pudo obtener tu posición.');
+    } finally {
+      setClientLocBusy(false);
+    }
+  }, []);
+
+  const clearNearMe = useCallback(() => {
+    setNearMeActive(false);
+    setClientCoords(null);
+  }, []);
 
   useEffect(() => {
     if (!selected || !clientId) {
       setFeeApproved(false);
       setHasConnectionCredit(false);
       setHasPending(false);
+      setHasActiveCase(false);
       return;
     }
     let cancelled = false;
     void (async () => {
       setContactChecking(true);
       try {
-        const [approved, pending, credit] = await Promise.all([
+        const [approved, pending, credit, activeCase] = await Promise.all([
           hasApprovedFeeForLawyer(clientId, selected.id),
           hasPendingTransaction(clientId, selected.id),
           hasOpenConnectionCreditForLawyer(clientId, selected.id),
+          hasActiveCaseWithLawyer(clientId, selected.id),
         ]);
         if (!cancelled) {
           setFeeApproved(approved);
           setHasPending(pending);
           setHasConnectionCredit(credit);
+          setHasActiveCase(activeCase);
         }
       } catch {
         if (!cancelled) {
           setFeeApproved(false);
           setHasConnectionCredit(false);
           setHasPending(false);
+          setHasActiveCase(false);
         }
       } finally {
         if (!cancelled) setContactChecking(false);
@@ -175,7 +295,61 @@ export default function LawyerDirectoryTab({
           </Text>
           <Ionicons name="chevron-down" size={20} color={colors.chatOutline} />
         </TouchableOpacity>
+
+        <View style={[styles.searchWrap, styles.locationSearchWrap]}>
+          <Ionicons name="location-outline" size={20} color={colors.chatOutline} />
+          <LocationAutocompleteInput
+            variant="directory"
+            value={locationQuery}
+            onChangeText={setLocationQuery}
+            onPickSuggestion={(s) => setLocationQuery(s.label)}
+            placeholder="Ciudad o zona (sugerencias al escribir)"
+            accessibilityLabel="Filtrar por ubicación"
+            wrapperStyle={styles.locationAutocompleteFlex}
+          />
+        </View>
+
+        <View style={styles.nearMeRow}>
+          <TouchableOpacity
+            style={[styles.nearMeBtn, nearMeActive && styles.nearMeBtnOn]}
+            onPress={() => void (nearMeActive ? clearNearMe() : enableNearMe())}
+            disabled={clientLocBusy}
+            activeOpacity={0.85}
+          >
+            {clientLocBusy ? (
+              <ActivityIndicator
+                size="small"
+                color={nearMeActive ? colors.chatSurface : colors.chatSecondary}
+              />
+            ) : (
+              <>
+                <Ionicons
+                  name={nearMeActive ? 'close-circle' : 'navigate-circle-outline'}
+                  size={20}
+                  color={nearMeActive ? colors.chatSurface : colors.chatSecondary}
+                />
+                <Text style={[styles.nearMeBtnText, nearMeActive && styles.nearMeBtnTextOn]}>
+                  {nearMeActive ? 'Quitar cercanía' : 'Abogados cercanos a mí'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+          {nearMeActive && clientCoords ? (
+            <Text style={styles.nearMeHint}>Ordenados por distancia</Text>
+          ) : null}
+        </View>
       </View>
+
+      {couponInfo.hasAny ? (
+        <View style={styles.couponBanner}>
+          <Ionicons name="ticket" size={22} color={colors.chatSecondary} />
+          <Text style={styles.couponBannerText}>
+            {couponSpecialtyLabels.length === 1
+              ? `Tienes un cupón de conexión para la especialidad «${couponSpecialtyLabels[0]}»: puedes elegir a cualquier abogado de esa área y crear un caso sin pagar de nuevo el fee.`
+              : `Tienes cupones de conexión activos (${couponSpecialtyLabels.join(', ')}): puedes elegir un abogado de esa misma especialidad y crear un caso sin pagar de nuevo el fee.`}
+          </Text>
+        </View>
+      ) : null}
 
       <Modal
         visible={specialtyPickerOpen}
@@ -234,13 +408,14 @@ export default function LawyerDirectoryTab({
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
           <Text style={styles.intro}>
-            Directorio de abogados registrados en LÉGALO. Pronto la IA te sugerirá el más adecuado
-            según tu caso.
+            Directorio de abogados verificados. Los perfiles con suscripción activa aparecen primero;
+            después, quienes están en periodo de prueba y, al final, plan básico (prueba vencida). Puedes
+            filtrar por nombre, ciudad o «cercanos a mí».
           </Text>
-          {filtered.length === 0 ? (
+          {directoryRows.length === 0 ? (
             <Text style={styles.empty}>No hay resultados que coincidan.</Text>
           ) : (
-            filtered.map((l) => (
+            directoryRows.map(({ lawyer: l, distanceKm }) => (
               <TouchableOpacity
                 key={l.id}
                 style={styles.card}
@@ -260,7 +435,20 @@ export default function LawyerDirectoryTab({
                     <Ionicons name="checkmark-circle" size={16} color={colors.chatSecondary} />
                   </View>
                   <Text style={styles.cardSpec}>{l.specialty || 'Especialidad no indicada'}</Text>
+                  {l.location_label ? (
+                    <View style={styles.cardLocRow}>
+                      <Ionicons name="location-outline" size={14} color={colors.chatOutline} />
+                      <Text style={styles.cardLocation} numberOfLines={2}>
+                        {l.location_label}
+                      </Text>
+                    </View>
+                  ) : null}
                   {l.phone ? <Text style={styles.cardPhone}>{l.phone}</Text> : null}
+                  {nearMeActive && distanceKm != null ? (
+                    <Text style={styles.cardDistance}>~ {formatDistanceKm(distanceKm)}</Text>
+                  ) : nearMeActive && distanceKm == null ? (
+                    <Text style={styles.cardDistanceMuted}>Sin ubicación en mapa</Text>
+                  ) : null}
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.chatOutline} />
               </TouchableOpacity>
@@ -291,6 +479,12 @@ export default function LawyerDirectoryTab({
                   </View>
                   <Text style={styles.modalTitle}>{selected.full_name?.trim() || 'Abogado'}</Text>
                   <Text style={styles.modalSpec}>{selected.specialty || '—'}</Text>
+                  {selected.location_label ? (
+                    <View style={styles.modalLocRow}>
+                      <Ionicons name="location-outline" size={16} color={colors.chatSecondary} />
+                      <Text style={styles.modalLocation}>{selected.location_label}</Text>
+                    </View>
+                  ) : null}
                   {selected.phone ? (
                     <Text style={styles.modalPhone}>{selected.phone}</Text>
                   ) : null}
@@ -302,10 +496,21 @@ export default function LawyerDirectoryTab({
                   ) : null}
 
                   <Text style={styles.modalHint}>
-                    Para crear un caso y contactar al abogado necesitas el fee verificado por el
-                    administrador, o un cupón de conexión activo (misma especialidad) si un abogado
-                    rechazó un caso previo. Usa «Crear caso (pago)» para subir comprobante.
+                    Toca «Contratar consulta» para subir el comprobante; en seguida podrás describir tu
+                    caso. Cuando el administrador valide el pago, el abogado recibirá la solicitud. Con
+                    cupón de conexión, vas directo a crear el caso sin pagar de nuevo. WhatsApp solo
+                    con un caso ya aceptado por el abogado.
                   </Text>
+
+                  {feeApproved ? (
+                    <View style={styles.feeVerifiedBanner}>
+                      <Ionicons name="checkmark-circle" size={18} color={colors.chatSecondary} />
+                      <Text style={styles.feeVerifiedText}>
+                        Ya tienes el fee de contacto aprobado para este abogado en la base de datos.
+                        Por eso «Crear caso» va a la solicitud sin volver a la pantalla de pago.
+                      </Text>
+                    </View>
+                  ) : null}
 
                   {hasPending ? (
                     <View style={styles.pendingBanner}>
@@ -321,63 +526,86 @@ export default function LawyerDirectoryTab({
                       styles.btnPrimary,
                       styles.btnMargin,
                       hasPending && styles.btnDisabled,
+                      contactChecking && styles.btnDisabled,
                     ]}
                     onPress={() => {
-                      if (!selected || hasPending) return;
+                      if (!selected || hasPending || contactChecking) return;
                       const l = selected;
                       setSelected(null);
-                      onOpenPayment(l);
+                      // Solo formulario de caso tras pago verificado o cupón (equivalente a haber pagado antes).
+                      if (feeApproved || hasConnectionCredit) {
+                        const deductConnectionCredit = !feeApproved && hasConnectionCredit;
+                        onContactReady(l, { deductConnectionCredit });
+                      } else {
+                        onOpenPayment(l);
+                      }
                     }}
-                    disabled={!!hasPending}
-                  >
-                    <Ionicons name="card-outline" size={20} color={colors.chatSurface} />
-                    <Text style={styles.btnPrimaryText}>Crear caso (pago y comprobante)</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.btnSecondary,
-                      (feeApproved || hasConnectionCredit) && styles.btnContactActive,
-                      !feeApproved && !hasConnectionCredit && styles.btnDisabledOpacity,
-                      (contactChecking || hasPending) && styles.btnDisabled,
-                    ]}
-                    disabled={(!feeApproved && !hasConnectionCredit) || contactChecking || hasPending}
-                    onPress={() => {
-                      if (!selected || (!feeApproved && !hasConnectionCredit) || hasPending) return;
-                      const l = selected;
-                      const deductConnectionCredit = !feeApproved && hasConnectionCredit;
-                      setSelected(null);
-                      onContactReady(l, { deductConnectionCredit });
-                    }}
+                    disabled={!!hasPending || contactChecking}
                   >
                     {contactChecking ? (
-                      <ActivityIndicator size="small" color={colors.chatSecondary} />
+                      <ActivityIndicator color={colors.chatSurface} size="small" />
                     ) : (
                       <>
                         <Ionicons
-                          name="logo-whatsapp"
-                          size={20}
-                          color={
-                            feeApproved || hasConnectionCredit
-                              ? colors.chatSurface
-                              : colors.chatOutline
+                          name={
+                            feeApproved || hasConnectionCredit ? 'document-text-outline' : 'card-outline'
                           }
+                          size={20}
+                          color={colors.chatSurface}
                         />
-                        <Text
-                          style={[
-                            styles.btnSecondaryText,
-                            (feeApproved || hasConnectionCredit) && styles.btnSecondaryTextOn,
-                          ]}
-                        >
-                          Contactar
+                        <Text style={styles.btnPrimaryText}>
+                          {feeApproved || hasConnectionCredit
+                            ? 'Crear caso (solicitud)'
+                            : 'Contratar consulta'}
                         </Text>
                       </>
                     )}
                   </TouchableOpacity>
+                  {onOpenWhatsApp ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.btnWa,
+                        hasActiveCase && selected.phone && styles.btnContactActive,
+                        (!hasActiveCase || !selected.phone) && styles.btnDisabledOpacity,
+                        contactChecking && styles.btnDisabled,
+                      ]}
+                      disabled={!hasActiveCase || !selected.phone || contactChecking}
+                      onPress={() => {
+                        if (!selected || !hasActiveCase || !selected.phone) return;
+                        const l = selected;
+                        setSelected(null);
+                        onOpenWhatsApp(l);
+                      }}
+                    >
+                      <Ionicons
+                        name="logo-whatsapp"
+                        size={20}
+                        color={
+                          hasActiveCase && selected.phone
+                            ? colors.chatSurface
+                            : colors.chatOutline
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.btnWaText,
+                          hasActiveCase && selected.phone && styles.btnSecondaryTextOn,
+                        ]}
+                      >
+                        WhatsApp
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                   {!feeApproved && !hasConnectionCredit && !contactChecking ? (
                     <Text style={styles.lockedHint}>
-                      Contactar se habilita con pago confirmado o con cupón de conexión para esta
-                      especialidad.
+                      Contratar consulta abre el pago y el comprobante; luego describes el caso en la
+                      misma sesión. No hace falta volver al directorio para eso.
+                    </Text>
+                  ) : null}
+                  {(feeApproved || hasConnectionCredit) && !hasActiveCase && !contactChecking ? (
+                    <Text style={styles.lockedHint}>
+                      WhatsApp se habilita cuando tengas al menos un caso en curso con este abogado
+                      (aceptado por él; no pendiente de aprobación).
                     </Text>
                   ) : null}
                   {hasConnectionCredit && !feeApproved ? (
@@ -408,6 +636,25 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 10,
   },
+  couponBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.chatPrimaryContainer,
+    borderWidth: 1,
+    borderColor: colors.chatSecondary + '33',
+  },
+  couponBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.chatOnSurface,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -420,6 +667,8 @@ const styles = StyleSheet.create({
     borderColor: colors.chatOutlineVariant + '44',
   },
   searchInput: { flex: 1, fontSize: 15, color: colors.chatOnSurface, padding: 0 },
+  locationSearchWrap: { zIndex: 40, alignItems: 'flex-start' },
+  locationAutocompleteFlex: { flex: 1, minWidth: 0 },
   specialtyTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -437,6 +686,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.chatOnSurface,
   },
+  nearMeRow: { gap: 6 },
+  nearMeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.chatSecondary + '66',
+    backgroundColor: colors.chatSurface,
+  },
+  nearMeBtnOn: {
+    backgroundColor: colors.chatSecondary,
+    borderColor: colors.chatSecondary,
+  },
+  nearMeBtnText: { fontSize: 14, fontWeight: '800', color: colors.chatSecondary },
+  nearMeBtnTextOn: { color: colors.chatSurface },
+  nearMeHint: { fontSize: 12, color: colors.chatOutline, marginLeft: 4 },
   pickerBackdrop: {
     flex: 1,
     backgroundColor: '#00000088',
@@ -531,6 +800,21 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   cardTitle: { fontSize: 16, fontWeight: '800', color: colors.chatOnSurface },
   cardSpec: { fontSize: 13, color: colors.chatOutline, marginTop: 4 },
+  cardLocRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 4,
+    maxWidth: '100%',
+  },
+  cardLocation: { flex: 1, fontSize: 12, color: colors.chatOutline, lineHeight: 18 },
+  cardDistance: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.chatSecondary,
+    marginTop: 4,
+  },
+  cardDistanceMuted: { fontSize: 11, color: colors.chatOutline, marginTop: 4, fontStyle: 'italic' },
   cardPhone: { fontSize: 12, color: colors.chatOutline, marginTop: 4 },
   modalBackdrop: {
     flex: 1,
@@ -548,6 +832,13 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 22, fontWeight: '900', color: colors.chatPrimary },
   modalSpec: { fontSize: 15, color: colors.chatSecondary, marginTop: 6, fontWeight: '700' },
+  modalLocRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 10,
+  },
+  modalLocation: { flex: 1, fontSize: 14, color: colors.chatOnSurface, lineHeight: 20 },
   modalPhone: { fontSize: 14, color: colors.chatOutline, marginTop: 8 },
   verifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
   verifiedText: { fontSize: 13, color: colors.chatSecondary, fontWeight: '600' },
@@ -562,6 +853,18 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   pendingText: { flex: 1, fontSize: 13, color: colors.chatOnSurface, lineHeight: 20 },
+  feeVerifiedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: colors.chatSecondaryContainer,
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: colors.chatSecondary + '44',
+  },
+  feeVerifiedText: { flex: 1, fontSize: 13, color: colors.chatOnSurface, lineHeight: 20 },
   btnMargin: { marginTop: 20 },
   btnPrimary: {
     flexDirection: 'row',
@@ -573,18 +876,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   btnPrimaryText: { color: colors.chatSurface, fontSize: 15, fontWeight: '800' },
-  btnSecondary: {
+  btnWa: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
     paddingVertical: 14,
     borderRadius: 12,
-    marginTop: 12,
+    marginTop: 10,
     backgroundColor: colors.chatContainer,
     borderWidth: 1,
     borderColor: colors.chatOutlineVariant + '99',
   },
+  btnWaText: { fontSize: 15, fontWeight: '800', color: colors.chatOutline },
   btnContactActive: {
     backgroundColor: '#25D366',
     borderColor: '#25D366',

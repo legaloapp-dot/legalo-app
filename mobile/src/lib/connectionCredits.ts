@@ -1,6 +1,30 @@
 import { supabase } from './supabase';
 import { DEFAULT_FEE_USD } from '../config/mobilePayment';
 
+/** Abogado rechazó o dejó el caso en reasignación (cupón / reembolso). */
+export function isCaseRejectedForCredit(status: string): boolean {
+  return status === 'rejected_by_lawyer' || status === 'reassignment_pending';
+}
+
+/** Cupones abiertos del cliente (puede haber varios por especialidad). */
+export async function getOpenConnectionCreditsInfo(clientId: string): Promise<{
+  hasAny: boolean;
+  specialties: string[];
+}> {
+  const { data, error } = await supabase
+    .from('connection_credits')
+    .select('specialty')
+    .eq('client_id', clientId)
+    .eq('status', 'open');
+  if (error || !data?.length) return { hasAny: false, specialties: [] };
+  const specialties = [
+    ...new Set(
+      data.map((r) => String((r as { specialty?: string }).specialty ?? '').trim()).filter(Boolean)
+    ),
+  ];
+  return { hasAny: specialties.length > 0, specialties };
+}
+
 export async function hasOpenConnectionCreditForLawyer(
   clientId: string,
   lawyerId: string
@@ -65,7 +89,7 @@ export async function claimConnectionCreditForRejectedCase(
     .select('lawyer_id, status, client_id')
     .eq('id', caseId)
     .maybeSingle();
-  if (!caseRow || caseRow.client_id !== clientId || caseRow.status !== 'rejected_by_lawyer') {
+  if (!caseRow || caseRow.client_id !== clientId || !isCaseRejectedForCredit(String(caseRow.status))) {
     throw new Error('Este caso no está rechazado o no te pertenece.');
   }
   const { data: refund } = await supabase
@@ -101,7 +125,7 @@ export async function requestRefundForRejectedCase(clientId: string, caseId: str
     .select('status, client_id')
     .eq('id', caseId)
     .maybeSingle();
-  if (!caseRow || caseRow.client_id !== clientId || caseRow.status !== 'rejected_by_lawyer') {
+  if (!caseRow || caseRow.client_id !== clientId || !isCaseRejectedForCredit(String(caseRow.status))) {
     throw new Error('Este caso no está rechazado o no te pertenece.');
   }
   const { data: existing } = await supabase

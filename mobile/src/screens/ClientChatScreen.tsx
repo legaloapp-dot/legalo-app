@@ -27,8 +27,15 @@ import LawyerDirectoryTab from './client/LawyerDirectoryTab';
 import LawyerPaymentScreen from './client/LawyerPaymentScreen';
 import type { DirectoryLawyer } from './client/LawyerDirectoryTab';
 import CreateCaseScreen, { type CreateCaseLawyer } from './CreateCaseScreen';
-import { hasApprovedFeeForLawyer } from '../lib/legalDashboard';
+import {
+  hasApprovedFeeForLawyer,
+  hasActiveCaseWithLawyer,
+  getFirstActiveCaseTitleForLawyer,
+} from '../lib/legalDashboard';
 import { hasOpenConnectionCreditForLawyer } from '../lib/connectionCredits';
+import { useClientNotifications } from '../hooks/useClientNotifications';
+import ClientNotificationsModal from '../components/ClientNotificationsModal';
+import ClientNotificationBell from '../components/ClientNotificationBell';
 
 type TabType = 'chat' | 'directorio' | 'casos' | 'pagos' | 'perfil';
 
@@ -99,10 +106,13 @@ export default function ClientChatScreen() {
   const [loadingLawyersFor, setLoadingLawyersFor] = useState<string | null>(null);
   const [createCaseLawyer, setCreateCaseLawyer] = useState<CreateCaseLawyer | null>(null);
   const [createCaseDeductCredit, setCreateCaseDeductCredit] = useState(false);
+  const [pendingTransactionId, setPendingTransactionId] = useState<string | null>(null);
   const [contactChecking, setContactChecking] = useState(false);
   const [paymentLawyer, setPaymentLawyer] = useState<DirectoryLawyer | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [clientNotifVisible, setClientNotifVisible] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const clientNotifications = useClientNotifications(clientId);
 
   const goToTab = (t: TabType) => {
     setActiveTab(t);
@@ -136,14 +146,21 @@ export default function ClientChatScreen() {
 
     setContactChecking(true);
     try {
-      const [approved, credit] = await Promise.all([
+      const [approved, credit, activeCase] = await Promise.all([
         hasApprovedFeeForLawyer(clientId, lawyer.id),
         hasOpenConnectionCreditForLawyer(clientId, lawyer.id),
+        hasActiveCaseWithLawyer(clientId, lawyer.id),
       ]);
+      if (activeCase) {
+        const title =
+          (await getFirstActiveCaseTitleForLawyer(clientId, lawyer.id)) ?? 'Mi caso';
+        openWhatsAppWithCaseTitle(lawyer, title);
+        return;
+      }
       if (!approved && !credit) {
         Alert.alert(
           'Pago o cupón requerido',
-          'El contacto se habilita cuando el administrador verifica tu pago del fee, o si tienes un cupón de conexión activo para la misma especialidad (por un caso rechazado). Revisa Pagos o Mis casos.'
+          'Para solicitar un caso necesitas el fee verificado o un cupón de conexión. El WhatsApp directo con el abogado se habilita cuando tengas al menos un caso aceptado en curso con él.'
         );
         return;
       }
@@ -241,6 +258,18 @@ export default function ClientChatScreen() {
           lawyer={paymentLawyer}
           clientId={clientId}
           onBack={() => setPaymentLawyer(null)}
+          onReceiptSubmitted={({ transactionId }) => {
+            if (!paymentLawyer) return;
+            const l = paymentLawyer;
+            setPaymentLawyer(null);
+            setCreateCaseDeductCredit(false);
+            setPendingTransactionId(transactionId);
+            setCreateCaseLawyer({
+              id: l.id,
+              full_name: l.full_name,
+              phone: l.phone ?? null,
+            });
+          }}
         />
       </SafeAreaView>
     );
@@ -386,9 +415,13 @@ export default function ClientChatScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconButton}>
-              <Ionicons name="notifications-outline" size={24} color={colors.chatOutline} />
-            </TouchableOpacity>
+            <ClientNotificationBell
+              unreadCount={clientNotifications.unreadCount}
+              onPress={() => {
+                setClientNotifVisible(true);
+                void clientNotifications.refresh();
+              }}
+            />
             <TouchableOpacity
               style={styles.profileAvatar}
               onPress={() => goToTab('perfil')}
@@ -538,6 +571,15 @@ export default function ClientChatScreen() {
                   phone: l.phone,
                 });
               }}
+              onOpenWhatsApp={async (l) => {
+                if (!clientId) return;
+                const title =
+                  (await getFirstActiveCaseTitleForLawyer(clientId, l.id)) ?? 'Mi caso';
+                openWhatsAppWithCaseTitle(
+                  { id: l.id, full_name: l.full_name, phone: l.phone },
+                  title
+                );
+              }}
             />
           </View>
         ) : activeTab === 'casos' && clientId ? (
@@ -680,20 +722,43 @@ export default function ClientChatScreen() {
         </View>
       </KeyboardAvoidingView>
 
+      {clientId ? (
+        <ClientNotificationsModal
+          visible={clientNotifVisible}
+          onClose={() => setClientNotifVisible(false)}
+          items={clientNotifications.items}
+          loading={clientNotifications.loading}
+          onMarkRead={(id) => void clientNotifications.markRead(id)}
+          onMarkAllRead={() => void clientNotifications.markAllRead()}
+        />
+      ) : null}
+
       {createCaseLawyer && clientId ? (
         <CreateCaseScreen
           visible
           deductConnectionCredit={createCaseDeductCredit}
+          pendingTransactionId={pendingTransactionId}
           lawyer={createCaseLawyer}
           clientId={clientId}
           clientDisplayName={profile?.full_name?.trim() || 'Cliente'}
           onClose={() => {
             setCreateCaseLawyer(null);
             setCreateCaseDeductCredit(false);
+            setPendingTransactionId(null);
           }}
           onCaseCreated={({ title, lawyer, status }) => {
             setCreateCaseLawyer(null);
             setCreateCaseDeductCredit(false);
+            setPendingTransactionId(null);
+            void clientNotifications.refresh();
+            if (status === 'awaiting_payment') {
+              Alert.alert(
+                'Recibido',
+                'Tenemos tu comprobante y los datos del caso. Cuando el administrador apruebe el pago, el abogado verá tu solicitud para aceptarla o rechazarla. Te avisaremos por la app.',
+                [{ text: 'Entendido' }]
+              );
+              return;
+            }
             if (status === 'pending_approval') {
               Alert.alert(
                 'Solicitud enviada',
@@ -837,9 +902,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  iconButton: {
-    padding: 4,
   },
   profileAvatar: {
     width: 32,

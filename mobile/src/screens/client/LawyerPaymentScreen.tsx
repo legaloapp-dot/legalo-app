@@ -16,12 +16,17 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import { DEFAULT_FEE_USD, PAYMENT_INSTRUCTIONS } from '../../config/mobilePayment';
-import { uploadReceiptAndCreateTransaction, hasPendingTransaction } from '../../lib/clientPayments';
+import {
+  uploadReceiptAndCreateTransaction,
+  hasPendingTransaction,
+  getLatestTransactionForPair,
+} from '../../lib/clientPayments';
 
 export interface PaymentLawyer {
   id: string;
   full_name: string | null;
   specialty: string | null;
+  phone?: string | null;
   avatar_url?: string | null;
 }
 
@@ -29,10 +34,13 @@ export default function LawyerPaymentScreen({
   lawyer,
   clientId,
   onBack,
+  onReceiptSubmitted,
 }: {
   lawyer: PaymentLawyer;
   clientId: string;
   onBack: () => void;
+  /** Tras subir el comprobante: flujo Flash → pantalla crear caso con este id de transacción. */
+  onReceiptSubmitted?: (info: { transactionId: string }) => void;
 }) {
   const [localUri, setLocalUri] = useState<string | null>(null);
   const [mime, setMime] = useState<string | undefined>();
@@ -73,12 +81,34 @@ export default function LawyerPaymentScreen({
     setMime(asset.mimeType ?? 'image/jpeg');
   };
 
+  const continueFlashFlowWithExistingTx = async () => {
+    if (!onReceiptSubmitted) return;
+    setSaving(true);
+    try {
+      const row = await getLatestTransactionForPair(clientId, lawyer.id);
+      if (!row?.id) {
+        Alert.alert(
+          'Sin comprobante',
+          'No encontramos un pago registrado para este abogado. Sube el comprobante primero.'
+        );
+        return;
+      }
+      onReceiptSubmitted({ transactionId: row.id });
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo continuar.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submit = async () => {
     if (pending) {
-      Alert.alert(
-        'Pago en revisión',
-        'Ya enviaste un comprobante para este abogado. Espera la confirmación del administrador en la pestaña Pagos.'
-      );
+      if (!onReceiptSubmitted) {
+        Alert.alert(
+          'Pago en revisión',
+          'Ya enviaste un comprobante para este abogado. Espera la confirmación del administrador en la pestaña Pagos.'
+        );
+      }
       return;
     }
     if (!localUri) {
@@ -87,9 +117,19 @@ export default function LawyerPaymentScreen({
     }
     setSaving(true);
     try {
-      await uploadReceiptAndCreateTransaction(clientId, lawyer.id, fee, localUri, mime);
+      const transactionId = await uploadReceiptAndCreateTransaction(
+        clientId,
+        lawyer.id,
+        fee,
+        localUri,
+        mime
+      );
       setPending(true);
       setLocalUri(null);
+      if (onReceiptSubmitted) {
+        onReceiptSubmitted({ transactionId });
+        return;
+      }
       Alert.alert(
         'Enviado',
         'Tu comprobante fue recibido. Cuando el administrador lo confirme, el botón de contacto con el abogado se habilitará.',
@@ -114,7 +154,7 @@ export default function LawyerPaymentScreen({
           <TouchableOpacity onPress={onBack} style={styles.iconBtn} hitSlop={12}>
             <Ionicons name="arrow-back" size={24} color={colors.chatPrimary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Pago y comprobante</Text>
+          <Text style={styles.headerTitle}>Contratar consulta</Text>
           <View style={styles.iconBtn} />
         </View>
 
@@ -174,9 +214,26 @@ export default function LawyerPaymentScreen({
             <View style={styles.warnBox}>
               <Ionicons name="time-outline" size={22} color={colors.chatSecondary} />
               <Text style={styles.warnText}>
-                Tienes un comprobante en revisión para este abogado. Revisa la pestaña Pagos.
+                {onReceiptSubmitted
+                  ? 'Tienes un comprobante en revisión. Puedes seguir ahora para describir tu caso; el abogado lo verá cuando el administrador apruebe el pago.'
+                  : 'Tienes un comprobante en revisión para este abogado. Revisa la pestaña Pagos.'}
               </Text>
             </View>
+          ) : null}
+
+          {pending === true && onReceiptSubmitted ? (
+            <TouchableOpacity
+              style={[styles.submitBtn, styles.continueCaseBtn, saving && styles.submitBtnDisabled]}
+              onPress={() => void continueFlashFlowWithExistingTx()}
+              disabled={saving}
+              activeOpacity={0.88}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.chatSurface} />
+              ) : (
+                <Text style={styles.submitText}>Continuar: datos del caso</Text>
+              )}
+            </TouchableOpacity>
           ) : null}
 
           <Text style={styles.sectionTitle}>Subir comprobante</Text>
@@ -310,6 +367,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  continueCaseBtn: { marginBottom: 8 },
   submitBtnDisabled: { opacity: 0.7 },
   submitText: { color: colors.chatSurface, fontSize: 16, fontWeight: '800' },
 });

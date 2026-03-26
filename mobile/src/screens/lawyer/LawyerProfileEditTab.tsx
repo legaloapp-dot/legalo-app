@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import type { Profile } from '../../types/profile';
@@ -23,6 +24,8 @@ import {
   type SpecialtyId,
 } from '../lawyer-onboarding/LawyerOnboardingStep1Screen';
 import { colors } from '../../theme/colors';
+import LocationAutocompleteInput from '../../components/LocationAutocompleteInput';
+import LawyerSubscriptionCard from '../../components/LawyerSubscriptionCard';
 
 const BIO_MAX = 600;
 
@@ -43,6 +46,7 @@ export default function LawyerProfileEditTab({
   onClose,
   refreshProfile,
   headerRight,
+  topBanner,
 }: {
   profile: Profile | null;
   userId: string | undefined;
@@ -51,6 +55,8 @@ export default function LawyerProfileEditTab({
   onClose: () => void;
   refreshProfile: () => Promise<void>;
   headerRight?: React.ReactNode;
+  /** Aviso de fin de periodo de prueba (solo abogado) */
+  topBanner?: React.ReactNode;
 }) {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -59,6 +65,10 @@ export default function LawyerProfileEditTab({
   const [specialtyOther, setSpecialtyOther] = useState('');
   const [yearsText, setYearsText] = useState('');
   const [bio, setBio] = useState('');
+  const [locationLabel, setLocationLabel] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [locationBusy, setLocationBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
@@ -82,11 +92,57 @@ export default function LawyerProfileEditTab({
     const y = profile.years_experience;
     setYearsText(y != null && y >= 0 ? String(y) : '');
     setBio(profile.professional_bio?.trim() ?? '');
+    setLocationLabel(profile.location_label?.trim() ?? '');
+    setLatitude(profile.latitude != null && !Number.isNaN(Number(profile.latitude)) ? Number(profile.latitude) : null);
+    setLongitude(
+      profile.longitude != null && !Number.isNaN(Number(profile.longitude)) ? Number(profile.longitude) : null
+    );
   }, [profile]);
 
   const yearsNum = yearsText.trim() === '' ? null : parseInt(yearsText, 10);
   const yearsInvalid =
     yearsText.trim() !== '' && (Number.isNaN(yearsNum) || yearsNum! < 0 || yearsNum! > 80);
+
+  const labelFromGeocode = (r: Location.LocationGeocodedAddress): string => {
+    const line1 =
+      r.streetNumber && r.street
+        ? `${r.streetNumber} ${r.street}`
+        : r.street || r.name || undefined;
+    const parts = [line1, r.district || r.city || r.subregion, r.region].filter(
+      (x): x is string => typeof x === 'string' && x.trim().length > 0
+    );
+    if (parts.length > 0) return parts.join(', ');
+    return [r.city, r.region, r.country].filter(Boolean).join(', ');
+  };
+
+  const pickOfficeLocation = async () => {
+    setLocationBusy(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permisos', 'Activa la ubicación para guardar las coordenadas de tu consultorio.');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const rev = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      const label = rev[0] ? labelFromGeocode(rev[0]) : `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      setLatitude(lat);
+      setLongitude(lng);
+      setLocationLabel(label.trim());
+    } catch (e) {
+      Alert.alert('Ubicación', e instanceof Error ? e.message : 'No se pudo obtener la ubicación.');
+    } finally {
+      setLocationBusy(false);
+    }
+  };
+
+  const clearOfficeLocation = () => {
+    setLatitude(null);
+    setLongitude(null);
+    setLocationLabel('');
+  };
 
   const pickAndUploadAvatar = async () => {
     if (!userId) return;
@@ -206,6 +262,9 @@ export default function LawyerProfileEditTab({
           specialty_other: specialty === 'Otro' ? specialtyOther.trim() : null,
           years_experience: yearsNum,
           professional_bio: bio.trim() || null,
+          latitude: latitude,
+          longitude: longitude,
+          location_label: locationLabel.trim() || null,
         })
         .eq('id', userId);
 
@@ -233,11 +292,14 @@ export default function LawyerProfileEditTab({
           <View style={styles.headerBtn}>{headerRight ?? null}</View>
         </View>
 
+        {topBanner ? <View style={styles.topBannerSlot}>{topBanner}</View> : null}
+
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
+          <LawyerSubscriptionCard profile={profile} />
           <View style={styles.avatarBlock}>
             <TouchableOpacity
               style={styles.avatarTouchable}
@@ -304,6 +366,59 @@ export default function LawyerProfileEditTab({
             placeholderTextColor={colors.outline}
           />
 
+          <Text style={styles.label}>Ubicación del consultorio</Text>
+          <Text style={styles.hintBlock}>
+            Los clientes podrán buscarte por ciudad o por cercanía. Al escribir verás sugerencias (como en
+            otras apps); al elegir una se guardan la dirección y las coordenadas. También puedes usar el
+            GPS en tu oficina.
+          </Text>
+          <View style={styles.locationInputWrap}>
+            <LocationAutocompleteInput
+              variant="lawyer"
+              value={locationLabel}
+              onChangeText={(t) => {
+                setLocationLabel(t);
+                setLatitude(null);
+                setLongitude(null);
+              }}
+              onPickSuggestion={(s) => {
+                setLocationLabel(s.label);
+                setLatitude(s.latitude);
+                setLongitude(s.longitude);
+              }}
+              placeholder="Ej.: Chacao, Caracas, Miranda"
+              accessibilityLabel="Ubicación del consultorio"
+              wrapperStyle={styles.locationAutocompleteFlex}
+            />
+          </View>
+          {latitude != null && longitude != null ? (
+            <Text style={styles.coordsHint}>
+              Coordenadas guardadas: {latitude.toFixed(5)}, {longitude.toFixed(5)}
+            </Text>
+          ) : null}
+          <View style={styles.locRow}>
+            <TouchableOpacity
+              style={[styles.locBtn, locationBusy && styles.locBtnDisabled]}
+              onPress={() => void pickOfficeLocation()}
+              disabled={locationBusy}
+              activeOpacity={0.85}
+            >
+              {locationBusy ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="navigate" size={18} color={colors.onPrimary} />
+                  <Text style={styles.locBtnText}>Usar mi ubicación actual</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            {(latitude != null && longitude != null) || locationLabel.trim() ? (
+              <TouchableOpacity style={styles.locClear} onPress={clearOfficeLocation} disabled={locationBusy}>
+                <Text style={styles.locClearText}>Quitar</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
           <Text style={styles.label}>Especialidad principal</Text>
           <View style={styles.specGrid}>
             {LAWYER_SPECIALTY_OPTIONS.map((opt) => {
@@ -318,7 +433,7 @@ export default function LawyerProfileEditTab({
                   <Ionicons
                     name={opt.icon}
                     size={18}
-                    color={on ? colors.primary : colors.outline}
+                    color={on ? colors.onPrimary : colors.outline}
                   />
                   <Text style={[styles.specChipText, on && styles.specChipTextOn]}>{opt.label}</Text>
                 </TouchableOpacity>
@@ -400,6 +515,7 @@ const styles = StyleSheet.create({
   },
   headerBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: colors.primary },
+  topBannerSlot: { paddingHorizontal: 16, marginBottom: 8 },
   scroll: { flex: 1 },
   content: { paddingHorizontal: 20, paddingBottom: 40 },
   avatarBlock: {
@@ -461,6 +577,49 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     marginTop: 8,
   },
+  hintBlock: {
+    fontSize: 13,
+    color: colors.onSurfaceVariant,
+    lineHeight: 19,
+    marginBottom: 10,
+  },
+  locationInputWrap: {
+    borderWidth: 1,
+    borderColor: colors.outlineVariant + '99',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+    zIndex: 50,
+    elevation: 4,
+  },
+  locationAutocompleteFlex: { flex: 1 },
+  coordsHint: {
+    fontSize: 11,
+    color: colors.outline,
+    marginTop: -8,
+    marginBottom: 10,
+  },
+  locRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 20,
+    flexWrap: 'wrap',
+  },
+  locBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  locBtnDisabled: { opacity: 0.65 },
+  locBtnText: { color: colors.onPrimary, fontSize: 14, fontWeight: '700' },
+  locClear: { paddingVertical: 8, paddingHorizontal: 4 },
+  locClearText: { color: colors.error, fontSize: 14, fontWeight: '700' },
   label: {
     fontSize: 11,
     fontWeight: '800',
@@ -496,10 +655,10 @@ const styles = StyleSheet.create({
   },
   specChipOn: {
     borderColor: colors.primary,
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: colors.primary,
   },
   specChipText: { fontSize: 13, fontWeight: '600', color: colors.onSurface },
-  specChipTextOn: { color: colors.primary, fontWeight: '700' },
+  specChipTextOn: { color: colors.onPrimary, fontWeight: '700' },
   saveBtn: {
     backgroundColor: colors.primary,
     paddingVertical: 16,

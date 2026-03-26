@@ -8,7 +8,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -28,6 +28,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "LÉGALO usa tu ubicación para mostrarte abogados cercanos en el directorio y para que guardes la ubicación de tu consultorio.",
+          "isAndroidForegroundServiceEnabled": false
+        }
+      ],
       [
         "expo-image-picker",
         {

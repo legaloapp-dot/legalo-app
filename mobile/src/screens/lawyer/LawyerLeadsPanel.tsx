@@ -23,12 +23,15 @@ export default function LawyerLeadsPanel({
   refreshing,
   onRefresh,
   onLeadUpdated,
+  embedded,
 }: {
   leads: LeadRow[];
   lawyerId: string | undefined;
   refreshing: boolean;
   onRefresh: () => void;
   onLeadUpdated: () => void;
+  /** Dentro de la pestaña Casos: sin título propio ni ScrollView (el padre hace scroll). */
+  embedded?: boolean;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -51,21 +54,13 @@ export default function LawyerLeadsPanel({
     }
   };
 
-  return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      <Text style={styles.title}>Solicitudes de clientes</Text>
-      <Text style={styles.sub}>
-        Marca el estado cuando contactes o descartes una solicitud. WhatsApp abre el chat con el
-        número indicado.
+  const body =
+    leads.length === 0 ? (
+      <Text style={[styles.empty, embedded && styles.emptyEmbedded]}>
+        No hay leads de primer contacto por ahora.
       </Text>
-      {leads.length === 0 ? (
-        <Text style={styles.empty}>No hay solicitudes por ahora.</Text>
-      ) : (
-        leads.map((lead, idx) => (
+    ) : (
+      leads.map((lead, idx) => (
           <View
             key={lead.id}
             style={[styles.card, idx === 1 && styles.cardAccent]}
@@ -144,18 +139,37 @@ export default function LawyerLeadsPanel({
               ) : null}
             </View>
           </View>
-        ))
-      )}
+      ))
+    );
+
+  if (embedded) {
+    return <View style={styles.embeddedWrap}>{body}</View>;
+  }
+
+  return (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      <Text style={styles.title}>Solicitudes de clientes</Text>
+      <Text style={styles.sub}>
+        Marca el estado cuando contactes o descartes una solicitud. WhatsApp abre el chat con el
+        número indicado.
+      </Text>
+      {body}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  embeddedWrap: { paddingBottom: 8 },
   scroll: { flex: 1, minHeight: 400 },
   content: { padding: 20, paddingBottom: 100 },
   title: { fontSize: 22, fontWeight: '800', color: colors.primary, marginBottom: 8 },
   sub: { fontSize: 14, color: colors.onSurfaceVariant, marginBottom: 20, lineHeight: 20 },
   empty: { fontSize: 15, color: colors.outline, fontStyle: 'italic', textAlign: 'center', marginTop: 24 },
+  emptyEmbedded: { marginTop: 0, textAlign: 'left' },
   card: {
     backgroundColor: colors.surfaceContainerLow,
     borderRadius: 12,

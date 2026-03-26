@@ -32,6 +32,7 @@ export default function CreateCaseScreen({
   onClose,
   onCaseCreated,
   deductConnectionCredit,
+  pendingTransactionId,
 }: {
   visible: boolean;
   lawyer: CreateCaseLawyer;
@@ -41,11 +42,13 @@ export default function CreateCaseScreen({
   onCaseCreated: (payload: {
     title: string;
     lawyer: CreateCaseLawyer;
-    status: 'pending_approval';
+    status: 'pending_approval' | 'awaiting_payment';
     deductConnectionCredit?: boolean;
   }) => void;
   /** Si el cliente contacta con cupón de conexión (sin fee nuevo), se consume al crear el caso. */
   deductConnectionCredit?: boolean;
+  /** Tras subir comprobante: el caso queda en validación de pago hasta que el admin apruebe. */
+  pendingTransactionId?: string | null;
 }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -70,29 +73,84 @@ export default function CreateCaseScreen({
     }
     setSaving(true);
     try {
-      const { error } = await supabase.from('cases').insert({
+      const isFlash = !!pendingTransactionId?.trim();
+      const insertRow: Record<string, unknown> = {
         client_id: clientId,
         lawyer_id: lawyer.id,
         title: t,
         description: description.trim() || null,
-        status: 'pending_approval',
         client_display_name: clientDisplayName.trim() || 'Cliente',
-        last_activity: 'Solicitud enviada: pendiente de aprobación del abogado',
         last_activity_at: new Date().toISOString(),
-      });
-      if (error) throw error;
-      if (deductConnectionCredit) {
-        await consumeConnectionCreditForLawyer(clientId, lawyer.id);
+      };
+      if (isFlash) {
+        insertRow.status = 'awaiting_payment';
+        insertRow.transaction_id = pendingTransactionId!.trim();
+        insertRow.last_activity =
+          'Comprobante recibido: validando pago; el abogado verá el caso cuando se apruebe';
+      } else {
+        insertRow.status = 'pending_approval';
+        insertRow.last_activity = 'Solicitud enviada: pendiente de aprobación del abogado';
+      }
+
+      const { error } = await supabase.from('cases').insert(insertRow);
+      if (error) {
+        const err = error as {
+          message?: string;
+          code?: string;
+          details?: string;
+          hint?: string;
+        };
+        console.error('[CreateCaseScreen] insert cases', {
+          message: err.message,
+          code: err.code,
+          details: err.details,
+          hint: err.hint,
+        });
+        const code = err.code ?? '';
+        const msg = err.message || 'Error desconocido';
+        const isMissingTransactionId =
+          code === 'PGRST204' || /transaction_id/i.test(msg);
+        const isCheck =
+          code === '23514' ||
+          /check constraint|violates check constraint/i.test(msg) ||
+          /cases_status_check/i.test(msg);
+        const extra = [err.details, err.hint].filter(Boolean).join('\n');
+        throw new Error(
+          (isMissingTransactionId
+            ? `${msg} — En Supabase (SQL Editor) ejecuta supabase/ADD_CASES_TRANSACTION_ID.sql o el bloque de transaction_id en EJECUTAR_EN_SUPABASE.sql, luego vuelve a intentar.`
+            : isCheck
+              ? `${msg} — En Supabase ejecuta el SQL que amplía estados de cases (pending_approval): EJECUTAR_EN_SUPABASE.sql o migración 20260330140000.`
+              : msg) + (extra ? `\n\n${extra}` : '')
+        );
+      }
+      if (deductConnectionCredit && !isFlash) {
+        const ok = await consumeConnectionCreditForLawyer(clientId, lawyer.id);
+        if (!ok) {
+          console.error('[CreateCaseScreen] consumeConnectionCreditForLawyer returned false', {
+            clientId,
+            lawyerId: lawyer.id,
+          });
+          throw new Error(
+            'El caso se registró pero no se pudo aplicar el cupón. Contacta soporte o revisa Mis casos.'
+          );
+        }
       }
       reset();
       onCaseCreated({
         title: t,
         lawyer,
-        status: 'pending_approval',
+        status: isFlash ? 'awaiting_payment' : 'pending_approval',
         deductConnectionCredit: !!deductConnectionCredit,
       });
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'No se pudo guardar el caso.');
+      console.error('[CreateCaseScreen] submit catch', e);
+      const text =
+        e instanceof Error
+          ? e.message
+          : typeof e === 'object' && e !== null && 'message' in e
+            ? String((e as { message: string }).message)
+            : 'No se pudo guardar el caso.';
+      Alert.alert('Error', text);
     } finally {
       setSaving(false);
     }
@@ -115,14 +173,27 @@ export default function CreateCaseScreen({
             <View style={styles.headerSpacer} />
           </View>
           <Text style={styles.sub}>
-            Vas a solicitar un caso con <Text style={styles.bold}>{lawyerLabel}</Text>. El abogado debe
-            aprobarlo primero. Cuando lo acepte, podrás contactarle por WhatsApp desde Mis casos.
-            {deductConnectionCredit ? (
+            {pendingTransactionId ? (
               <>
-                {' '}
-                <Text style={styles.bold}>Se usará tu cupón de conexión</Text> (sin pago adicional).
+                <Text style={styles.bold}>¡Pago recibido!</Text> Mientras validamos el comprobante,
+                cuéntanos de qué trata tu caso para que <Text style={styles.bold}>{lawyerLabel}</Text>{' '}
+                esté preparado. El abogado solo verá la solicitud cuando el administrador apruebe el
+                pago.
               </>
-            ) : null}
+            ) : (
+              <>
+                Vas a solicitar un caso con <Text style={styles.bold}>{lawyerLabel}</Text>. El
+                abogado debe aprobarlo primero. Cuando lo acepte, podrás contactarle por WhatsApp
+                desde Mis casos.
+                {deductConnectionCredit ? (
+                  <>
+                    {' '}
+                    <Text style={styles.bold}>Se usará tu cupón de conexión</Text> (sin pago
+                    adicional).
+                  </>
+                ) : null}
+              </>
+            )}
           </Text>
           <ScrollView
             style={styles.scroll}
@@ -163,7 +234,9 @@ export default function CreateCaseScreen({
               ) : (
                 <>
                   <Ionicons name="send" size={20} color={colors.chatSurface} />
-                  <Text style={styles.primaryBtnText}>Enviar solicitud</Text>
+                  <Text style={styles.primaryBtnText}>
+                    {pendingTransactionId ? 'Enviar datos del caso' : 'Enviar solicitud'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>

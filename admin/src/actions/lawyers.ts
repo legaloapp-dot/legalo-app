@@ -4,14 +4,32 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/admin";
 
-export async function listLawyersWithEmail() {
+export type LawyerListFilters = {
+  plan?: string;
+  paidFrom?: string;
+  paidTo?: string;
+};
+
+export async function listLawyersWithEmail(filters?: LawyerListFilters) {
   await requireAdmin();
   const admin = createServiceClient();
-  const { data: profiles, error } = await admin
-    .from("profiles")
-    .select("*")
-    .eq("role", "lawyer")
-    .order("created_at", { ascending: false });
+  let q = admin.from("profiles").select("*").eq("role", "lawyer");
+
+  const plan = filters?.plan?.trim();
+  if (plan && plan !== "all" && ["trial", "premium", "basic"].includes(plan)) {
+    q = q.eq("plan", plan);
+  }
+
+  const paidFrom = filters?.paidFrom?.trim();
+  const paidTo = filters?.paidTo?.trim();
+  if (paidFrom) {
+    q = q.gte("subscription_paid_at", `${paidFrom}T00:00:00.000Z`);
+  }
+  if (paidTo) {
+    q = q.lte("subscription_paid_at", `${paidTo}T23:59:59.999Z`);
+  }
+
+  const { data: profiles, error } = await q.order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
 
   const { data: authData, error: listErr } = await admin.auth.admin.listUsers({
@@ -124,6 +142,45 @@ export async function updateLawyerAction(formData: FormData) {
       professional_bio,
       accepting_cases,
     })
+    .eq("id", id)
+    .eq("role", "lawyer");
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/dashboard/abogados");
+  revalidatePath(`/dashboard/abogados/${id}`);
+}
+
+/** Suscripción (plan, vigencia, fecha de pago registrada por admin). */
+export async function updateLawyerSubscriptionAction(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const plan = String(formData.get("plan") ?? "").trim();
+  const expiresRaw = String(formData.get("subscription_expires_at") ?? "").trim();
+  const paidRaw = String(formData.get("subscription_paid_at") ?? "").trim();
+
+  if (!id) throw new Error("ID inválido");
+  if (!["trial", "premium", "basic"].includes(plan)) throw new Error("Plan inválido");
+
+  const admin = createServiceClient();
+  const payload: Record<string, unknown> = { plan };
+
+  if (expiresRaw) {
+    const d = new Date(expiresRaw);
+    if (Number.isNaN(d.getTime())) throw new Error("Fecha de vigencia inválida");
+    payload.subscription_expires_at = d.toISOString();
+  } else {
+    payload.subscription_expires_at = null;
+  }
+
+  if (paidRaw) {
+    payload.subscription_paid_at = `${paidRaw}T12:00:00.000Z`;
+  } else {
+    payload.subscription_paid_at = null;
+  }
+
+  const { error } = await admin
+    .from("profiles")
+    .update(payload)
     .eq("id", id)
     .eq("role", "lawyer");
 

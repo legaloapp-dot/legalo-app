@@ -11,7 +11,7 @@ export const PAYMENT_INSTRUCTIONS = {
   lines: [
     'Realiza el pago del fee de contacto al número corporativo de LÉGALO.',
     'Usa el monto indicado y guarda el comprobante para subirlo aquí.',
-    'Cuando el administrador confirme el pago, podrás usar «Contactar» para abrir WhatsApp con el abogado.',
+    'Cuando el administrador confirme el pago, en el directorio «Crear caso» abrirá la solicitud. WhatsApp con el abogado se habilita cuando tengas un caso en curso aceptado por él.',
   ],
   /** Placeholder — reemplazar con datos reales */
   bank: 'Banco de Venezuela',

@@ -1,8 +1,10 @@
 import { supabase } from './supabase';
 
 export type LegalCaseStatus =
+  | 'awaiting_payment'
   | 'pending_approval'
   | 'rejected_by_lawyer'
+  | 'reassignment_pending'
   | 'active'
   | 'in_court'
   | 'pending'
@@ -22,6 +24,12 @@ export interface LegalCaseRow {
   last_activity: string | null;
   last_activity_at: string | null;
   created_at: string;
+  /** Notas internas del abogado (el cliente no las edita). */
+  lawyer_observations?: string | null;
+  /** Calificación al finalizar (1–5). */
+  client_rating?: number | null;
+  client_rating_comment?: string | null;
+  client_rating_at?: string | null;
 }
 
 export interface LeadRow {
@@ -68,6 +76,10 @@ function mapLegacyLegalCaseRow(row: Record<string, unknown>): LegalCaseRow {
     last_activity: row.last_activity != null ? String(row.last_activity) : null,
     last_activity_at: row.last_activity_at != null ? String(row.last_activity_at) : null,
     created_at: String(row.created_at ?? ''),
+    lawyer_observations: null,
+    client_rating: null,
+    client_rating_comment: null,
+    client_rating_at: null,
   };
 }
 
@@ -76,6 +88,7 @@ export async function fetchLawyerCases(lawyerId: string): Promise<LegalCaseRow[]
     .from('cases')
     .select('*')
     .eq('lawyer_id', lawyerId)
+    .neq('status', 'awaiting_payment')
     .order('last_activity_at', { ascending: false, nullsFirst: false })
     .limit(50);
 
@@ -126,11 +139,69 @@ export async function fetchLawyerActivity(lawyerId: string): Promise<LawyerActiv
   return (data ?? []) as LawyerActivityRow[];
 }
 
+/** La actividad de pagos es interna de la app; el abogado ve interacción con clientes y casos. */
+export function buildLawyerDashboardActivity(
+  cases: LegalCaseRow[],
+  dbActivity: LawyerActivityRow[],
+  limit = 25
+): LawyerActivityRow[] {
+  const fromDb = dbActivity.filter((a) => a.event_type !== 'payment');
+
+  const fromCases: LawyerActivityRow[] = cases
+    .filter((c) => c.last_activity_at)
+    .map((c) => {
+      const statusText = caseStatusLabel(c.status).text;
+      const client = c.client_display_name?.trim() || 'Cliente';
+      const title =
+        c.last_activity?.trim() ||
+        (c.status === 'pending_approval' ? 'Caso pendiente de tu respuesta' : 'Actualización de caso');
+      return {
+        id: `case-feed-${c.id}`,
+        lawyer_id: c.lawyer_id,
+        event_type: 'case_update' as const,
+        title,
+        body: `${client} · ${statusText}`,
+        created_at: c.last_activity_at!,
+      };
+    });
+
+  const merged = [...fromCases, ...fromDb];
+  merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const seen = new Set<string>();
+  const out: LawyerActivityRow[] = [];
+  for (const row of merged) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(row);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 export function countActiveCases(cases: LegalCaseRow[]): number {
   return cases.filter(
     (c) =>
-      !['closed', 'pending_approval', 'rejected_by_lawyer'].includes(c.status)
+      ![
+        'closed',
+        'pending_approval',
+        'rejected_by_lawyer',
+        'reassignment_pending',
+        'awaiting_payment',
+      ].includes(c.status)
   ).length;
+}
+
+/** Pendientes de aprobación primero, luego por última actividad. */
+export function sortLawyerCasesForDisplay(cases: LegalCaseRow[]): LegalCaseRow[] {
+  return [...cases].sort((a, b) => {
+    const pri = (s: LegalCaseStatus) => (s === 'pending_approval' ? 0 : 1);
+    const d = pri(a.status) - pri(b.status);
+    if (d !== 0) return d;
+    const ta = a.last_activity_at ? new Date(a.last_activity_at).getTime() : 0;
+    const tb = b.last_activity_at ? new Date(b.last_activity_at).getTime() : 0;
+    return tb - ta;
+  });
 }
 
 export function sumApprovedAmounts(rows: { amount: unknown }[]): number {
@@ -162,10 +233,14 @@ export function monthOverMonthChangePct(
 
 export function caseStatusLabel(status: LegalCaseStatus): { text: string; tone: 'success' | 'neutral' } {
   switch (status) {
+    case 'awaiting_payment':
+      return { text: 'VALIDANDO PAGO', tone: 'neutral' };
     case 'pending_approval':
       return { text: 'PEND. APROBACIÓN', tone: 'neutral' };
     case 'rejected_by_lawyer':
       return { text: 'RECHAZADO', tone: 'neutral' };
+    case 'reassignment_pending':
+      return { text: 'REASIGNAR', tone: 'neutral' };
     case 'active':
       return { text: 'ACTIVO', tone: 'neutral' };
     case 'in_court':
@@ -187,13 +262,24 @@ export function caseStatusLabel(status: LegalCaseStatus): { text: string; tone: 
 
 export function caseStatusIcon(
   status: LegalCaseStatus
-): 'document-text-outline' | 'cash-outline' | 'time-outline' | 'flash-outline' | 'hammer-outline' | 'hourglass-outline' | 'close-circle-outline' {
+):
+  | 'document-text-outline'
+  | 'cash-outline'
+  | 'time-outline'
+  | 'flash-outline'
+  | 'hammer-outline'
+  | 'hourglass-outline'
+  | 'close-circle-outline'
+  | 'checkmark-done-outline' {
   if (status === 'paid') return 'cash-outline';
   if (status === 'drafting') return 'time-outline';
   if (status === 'active') return 'flash-outline';
   if (status === 'in_court') return 'hammer-outline';
+  if (status === 'awaiting_payment') return 'time-outline';
   if (status === 'pending_approval') return 'hourglass-outline';
-  if (status === 'rejected_by_lawyer') return 'close-circle-outline';
+  if (status === 'rejected_by_lawyer' || status === 'reassignment_pending')
+    return 'close-circle-outline';
+  if (status === 'closed') return 'checkmark-done-outline';
   return 'document-text-outline';
 }
 
@@ -245,6 +331,20 @@ export async function fetchClientCases(clientId: string): Promise<LegalCaseRow[]
   return (data ?? []) as LegalCaseRow[];
 }
 
+/** Finaliza un caso activo y califica al abogado (RPC en Supabase). */
+export async function finalizeClientCase(
+  caseId: string,
+  stars: number,
+  comment: string | null
+): Promise<void> {
+  const { error } = await supabase.rpc('finalize_client_case', {
+    p_case_id: caseId,
+    p_stars: stars,
+    p_comment: comment ?? '',
+  });
+  if (error) throw error;
+}
+
 /** Comprueba si el cliente tiene pago de fee aprobado para poder contactar al abogado (MVP: sin hitos internos). */
 export async function hasApprovedFeeForLawyer(
   clientId: string,
@@ -262,6 +362,50 @@ export async function hasApprovedFeeForLawyer(
   return data != null;
 }
 
+/** Casos que ya salieron de «pendiente de aprobación» y no están cerrados/rechazados (alineado con countActiveCases). */
+export const CASE_STATUSES_ELIGIBLE_FOR_DIRECT_CONTACT: LegalCaseStatus[] = [
+  'active',
+  'in_court',
+  'pending',
+  'drafting',
+  'consulting',
+  'paid',
+];
+
+/** Hay al menos un caso «en curso» con ese abogado (permite WhatsApp desde directorio/chat). */
+export async function hasActiveCaseWithLawyer(
+  clientId: string,
+  lawyerId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('cases')
+    .select('id')
+    .eq('client_id', clientId)
+    .eq('lawyer_id', lawyerId)
+    .in('status', CASE_STATUSES_ELIGIBLE_FOR_DIRECT_CONTACT)
+    .limit(1)
+    .maybeSingle();
+  if (error) return false;
+  return data != null;
+}
+
+export async function getFirstActiveCaseTitleForLawyer(
+  clientId: string,
+  lawyerId: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('cases')
+    .select('title')
+    .eq('client_id', clientId)
+    .eq('lawyer_id', lawyerId)
+    .in('status', CASE_STATUSES_ELIGIBLE_FOR_DIRECT_CONTACT)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return data?.title ?? null;
+}
+
 /** Opciones de estado para edición abogado (casos) */
 /** Estados editables manualmente (sin `pending_approval`: usar Aprobar/Rechazar en el detalle). */
 export const CASE_STATUS_EDIT_OPTIONS: { value: LegalCaseStatus; label: string }[] = [
@@ -273,6 +417,7 @@ export const CASE_STATUS_EDIT_OPTIONS: { value: LegalCaseStatus; label: string }
   { value: 'paid', label: 'Pagado' },
   { value: 'closed', label: 'Cerrado' },
   { value: 'rejected_by_lawyer', label: 'Rechazado (oferta)' },
+  { value: 'reassignment_pending', label: 'Reasignación pendiente' },
 ];
 
 export async function updateLawyerCase(
@@ -283,6 +428,7 @@ export async function updateLawyerCase(
     description?: string | null;
     status?: LegalCaseStatus;
     last_activity?: string | null;
+    lawyer_observations?: string | null;
   }
 ): Promise<LegalCaseRow> {
   const now = new Date().toISOString();
@@ -303,7 +449,9 @@ export async function updateLawyerCase(
     ? patch.title
     : patch.status
       ? `Estado: ${patch.status}`
-      : 'Notas actualizadas';
+      : patch.lawyer_observations != null
+        ? 'Observaciones actualizadas'
+        : 'Notas actualizadas';
   void supabase.from('lawyer_activity').insert({
     lawyer_id: lawyerId,
     event_type: 'case_update',

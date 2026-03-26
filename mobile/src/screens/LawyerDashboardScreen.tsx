@@ -21,25 +21,28 @@ import { supabase } from '../lib/supabase';
 import { colors } from '../theme/colors';
 import { useLawyerDashboardData } from '../hooks/useLawyerDashboardData';
 import {
-  caseStatusLabel,
-  caseStatusIcon,
+  sortLawyerCasesForDisplay,
+  buildLawyerDashboardActivity,
   activityIcon,
   activityDot,
   type LegalCaseRow,
   type LawyerActivityRow,
 } from '../lib/legalDashboard';
 import { relativeTimeEs, digitsOnlyE164 } from '../lib/format';
-import LawyerLeadsPanel from './lawyer/LawyerLeadsPanel';
+import LawyerCaseList from './lawyer/LawyerCaseList';
+import LawyerCasosPanel from './lawyer/LawyerCasosPanel';
 import LawyerCaseDetailModal from './lawyer/LawyerCaseDetailModal';
 import LawyerProfileEditTab from './lawyer/LawyerProfileEditTab';
+import LawyerPaymentsTab from './lawyer/LawyerPaymentsTab';
 import LawyerNotificationsModal from '../components/LawyerNotificationsModal';
 import LawyerNotificationBell from '../components/LawyerNotificationBell';
 import { useLawyerNotifications } from '../hooks/useLawyerNotifications';
 import { registerAndSaveLawyerPushToken } from '../lib/pushNotifications';
+import BannerVencimiento from '../components/BannerVencimiento';
 
 const WHATSAPP = '#25D366';
 
-type LawyerTab = 'cases' | 'leads' | 'profile';
+type LawyerTab = 'cases' | 'leads' | 'payments' | 'profile';
 
 export default function LawyerDashboardScreen() {
   const { profile, session, refreshProfile } = useAuth();
@@ -69,6 +72,12 @@ export default function LawyerDashboardScreen() {
     await refreshProfile();
     setRefreshing(false);
   }, [dashboard, notifications, refreshProfile]);
+
+  const onPaymentsRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshProfile();
+    setRefreshing(false);
+  }, [refreshProfile]);
 
   const persistAccepting = async (v: boolean) => {
     if (!lawyerId) return;
@@ -113,16 +122,16 @@ export default function LawyerDashboardScreen() {
     return { main: Number(r).toFixed(1), showSlash: true };
   }, [profile?.professional_rating]);
 
+  const activityFeed = useMemo(
+    () => buildLawyerDashboardActivity(dashboard.cases, dashboard.activity),
+    [dashboard.cases, dashboard.activity]
+  );
+
   const openWa = (phone: string) => {
     const d = digitsOnlyE164(phone);
     if (!d) return;
     Linking.openURL(`https://wa.me/${d}`).catch(() => {});
   };
-
-  const caseActivityLine = (c: LegalCaseRow) =>
-    c.last_activity?.trim()
-      ? c.last_activity
-      : `Última actividad: ${relativeTimeEs(c.last_activity_at)}`;
 
   const activityMeta = (a: LawyerActivityRow) => ({
     icon: activityIcon(a.event_type) as keyof typeof Ionicons.glyphMap,
@@ -133,6 +142,10 @@ export default function LawyerDashboardScreen() {
     setNotificationsModalVisible(true);
     void notifications.refresh();
   }, [notifications]);
+
+  const trialBannerEl = (
+    <BannerVencimiento plan={profile?.plan} subscriptionExpiresAt={profile?.subscription_expires_at} />
+  );
 
   const notificationsModalEl = (
     <LawyerNotificationsModal
@@ -158,17 +171,60 @@ export default function LawyerDashboardScreen() {
                 <Ionicons name="arrow-back" size={24} color={colors.primary} />
               </TouchableOpacity>
             </View>
-            <Text style={[styles.subTitle, styles.subHeaderTitleFlex]}>Leads</Text>
+            <Text style={[styles.subTitle, styles.subHeaderTitleFlex]}>Casos</Text>
             <View style={styles.subHeaderSlot}>
               <LawyerNotificationBell unreadCount={notifications.unreadCount} onPress={openNotifications} />
             </View>
           </View>
-          <LawyerLeadsPanel
-            leads={dashboard.leads}
-            lawyerId={lawyerId}
+          <View style={styles.trialBannerSlot}>{trialBannerEl}</View>
+          <LawyerCasosPanel
+            cases={dashboard.cases}
             refreshing={refreshing}
             onRefresh={onRefresh}
-            onLeadUpdated={() => void dashboard.refresh()}
+            onSelectCase={(c) => {
+              setSelectedCase(c);
+              setCaseModalVisible(true);
+            }}
+          />
+          <LawyerCaseDetailModal
+            visible={caseModalVisible}
+            lawyerId={lawyerId}
+            caseRow={selectedCase}
+            onClose={() => {
+              setCaseModalVisible(false);
+              setSelectedCase(null);
+            }}
+            onSaved={() => {
+              void dashboard.refresh();
+            }}
+          />
+          <LawyerBottomNav active={tab} onChange={setTab} />
+        </SafeAreaView>
+        {notificationsModalEl}
+      </>
+    );
+  }
+
+  if (tab === 'payments') {
+    return (
+      <>
+        <SafeAreaView style={styles.safe} edges={['top']}>
+          <View style={styles.subHeader}>
+            <View style={styles.subHeaderSlot}>
+              <TouchableOpacity onPress={() => setTab('cases')} hitSlop={12}>
+                <Ionicons name="arrow-back" size={24} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.subTitle, styles.subHeaderTitleFlex]}>Pagos</Text>
+            <View style={styles.subHeaderSlot}>
+              <LawyerNotificationBell unreadCount={notifications.unreadCount} onPress={openNotifications} />
+            </View>
+          </View>
+          <View style={styles.trialBannerSlot}>{trialBannerEl}</View>
+          <LawyerPaymentsTab
+            profile={profile}
+            refreshing={refreshing}
+            onRefresh={() => void onPaymentsRefresh()}
           />
           <LawyerBottomNav active={tab} onChange={setTab} />
         </SafeAreaView>
@@ -188,6 +244,7 @@ export default function LawyerDashboardScreen() {
             onSignOut={() => void supabase.auth.signOut()}
             onClose={() => setTab('cases')}
             refreshProfile={refreshProfile}
+            topBanner={trialBannerEl}
             headerRight={
               <LawyerNotificationBell unreadCount={notifications.unreadCount} onPress={openNotifications} />
             }
@@ -225,7 +282,6 @@ export default function LawyerDashboardScreen() {
         <View style={styles.topBar}>
           <View style={styles.brandRow}>
             <Logo size="small" />
-            <Text style={styles.brandText}>LÉGALO</Text>
           </View>
           <View style={styles.topRight}>
             <LawyerNotificationBell unreadCount={notifications.unreadCount} onPress={openNotifications} />
@@ -244,6 +300,8 @@ export default function LawyerDashboardScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {trialBannerEl}
 
         <Text style={styles.welcome}>Bienvenido de nuevo,{'\n'}{displayName}</Text>
         <Text style={styles.dateLine}>{dateLine}</Text>
@@ -293,7 +351,7 @@ export default function LawyerDashboardScreen() {
             ) : null}
           </View>
           <TouchableOpacity onPress={() => setTab('leads')}>
-            <Text style={styles.viewAll}>Ver todas</Text>
+            <Text style={styles.viewAll}>Ver en Casos</Text>
           </TouchableOpacity>
         </View>
 
@@ -336,79 +394,21 @@ export default function LawyerDashboardScreen() {
         </ScrollView>
 
         <Text style={styles.sectionTitleLeft}>Casos en curso</Text>
-        {dashboard.cases.length === 0 ? (
-          <Text style={styles.emptySection}>No tienes casos aún. Crea uno desde el panel o asigna clientes.</Text>
-        ) : (
-          dashboard.cases.map((c) => {
-            const pill = caseStatusLabel(c.status);
-            const iconName = caseStatusIcon(c.status);
-            return (
-              <TouchableOpacity
-                key={c.id}
-                style={styles.caseCard}
-                onPress={() => {
-                  setSelectedCase(c);
-                  setCaseModalVisible(true);
-                }}
-                activeOpacity={0.88}
-              >
-                <View style={styles.caseLeft}>
-                  <View
-                    style={[
-                      styles.caseIconCircle,
-                      c.status === 'paid' && { backgroundColor: colors.secondaryContainer },
-                      c.status === 'drafting' && { backgroundColor: colors.surfaceContainerHighest },
-                      c.status === 'active' && { backgroundColor: colors.secondaryContainer },
-                      c.status === 'in_court' && { backgroundColor: colors.tertiaryContainer + '55' },
-                      (c.status === 'consulting' || c.status === 'closed' || c.status === 'pending') && {
-                        backgroundColor: colors.primaryContainer,
-                      },
-                      c.status === 'pending_approval' && { backgroundColor: colors.tertiaryContainer },
-                      c.status === 'rejected_by_lawyer' && { backgroundColor: colors.errorContainer },
-                    ]}
-                  >
-                    <Ionicons
-                      name={iconName as keyof typeof Ionicons.glyphMap}
-                      size={22}
-                      color={
-                        c.status === 'drafting' || c.status === 'in_court'
-                          ? colors.outline
-                          : colors.primary
-                      }
-                    />
-                  </View>
-                  <View style={styles.caseTextCol}>
-                    <Text style={styles.caseTitle}>{c.title}</Text>
-                    {c.client_display_name ? (
-                      <Text style={styles.caseClient}>Cliente: {c.client_display_name}</Text>
-                    ) : null}
-                    <Text style={styles.caseActivity}>{caseActivityLine(c)}</Text>
-                  </View>
-                </View>
-                <View style={styles.caseRight}>
-                  <View
-                    style={[styles.casePill, pill.tone === 'success' && styles.casePillSuccess]}
-                  >
-                    <Text
-                      style={[styles.casePillText, pill.tone === 'success' && styles.casePillTextSuccess]}
-                    >
-                      {pill.text}
-                    </Text>
-                  </View>
-                  <Ionicons name="create-outline" size={22} color={colors.primary} />
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
+        <LawyerCaseList
+          cases={sortLawyerCasesForDisplay(dashboard.cases)}
+          onSelectCase={(c) => {
+            setSelectedCase(c);
+            setCaseModalVisible(true);
+          }}
+        />
 
         <View style={styles.activityCard}>
           <Text style={styles.activityTitle}>Actividad reciente</Text>
-          {dashboard.activity.length === 0 ? (
+          {activityFeed.length === 0 ? (
             <Text style={styles.emptySection}>Sin actividad reciente.</Text>
           ) : (
             <View style={styles.timeline}>
-              {dashboard.activity.map((a) => {
+              {activityFeed.map((a) => {
                 const meta = activityMeta(a);
                 return (
                   <View key={a.id} style={styles.timelineItem}>
@@ -469,8 +469,9 @@ function LawyerBottomNav({
   onChange: (t: LawyerTab) => void;
 }) {
   const items: { key: LawyerTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-    { key: 'cases', label: 'Casos', icon: 'hammer' },
-    { key: 'leads', label: 'Leads', icon: 'person-add-outline' },
+    { key: 'cases', label: 'Inicio', icon: 'home-outline' },
+    { key: 'leads', label: 'Casos', icon: 'folder-open-outline' },
+    { key: 'payments', label: 'Pagos', icon: 'card-outline' },
     { key: 'profile', label: 'Perfil', icon: 'person-circle-outline' },
   ];
   return (
@@ -537,12 +538,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  brandText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.primary,
-    letterSpacing: -0.5,
-  },
+  trialBannerSlot: { paddingHorizontal: 20, marginBottom: 4 },
   topRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   avatar: {
     width: 40,
@@ -776,46 +772,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  caseCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant + '22',
-  },
-  caseLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  caseIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  caseTextCol: { flex: 1 },
-  caseTitle: { fontSize: 15, fontWeight: '700', color: colors.primary },
-  caseClient: { fontSize: 12, fontWeight: '600', color: colors.onSurfaceVariant, marginTop: 4 },
-  caseActivity: { fontSize: 12, color: colors.onSurfaceVariant, marginTop: 4 },
-  caseRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  casePill: {
-    backgroundColor: colors.surfaceContainerHigh,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  casePillSuccess: { backgroundColor: '#d1fae5' },
-  casePillText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    color: colors.primary,
-    textTransform: 'uppercase',
-  },
-  casePillTextSuccess: { color: '#047857' },
-
   activityCard: {
     backgroundColor: colors.surfaceContainerLow,
     borderRadius: 12,
@@ -869,10 +825,11 @@ const styles = StyleSheet.create({
   },
   navItem: {
     alignItems: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 6,
     paddingVertical: 8,
     borderRadius: 10,
-    minWidth: 72,
+    minWidth: 64,
+    flex: 1,
   },
   navItemActive: { backgroundColor: colors.primary },
   navLabel: {

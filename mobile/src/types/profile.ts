@@ -18,6 +18,15 @@ export interface Profile {
   lawyer_onboarding_step: number | null;
   accepting_cases: boolean | null;
   professional_rating: number | null;
+  /** Consultorio: coordenadas y texto para directorio / cercanía */
+  latitude?: number | null;
+  longitude?: number | null;
+  location_label?: string | null;
+  /** trial | premium | basic — null en clientes */
+  plan?: string | null;
+  subscription_expires_at?: string | null;
+  /** Último pago de suscripción (registrado por admin) */
+  subscription_paid_at?: string | null;
   created_at: string;
 }
 

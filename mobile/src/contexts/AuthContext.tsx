@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { Profile } from '../types/profile';
+import { refreshLawyerSubscriptionIfExpired } from '../lib/subscription';
 
 interface AuthContextType {
   session: Session | null;
@@ -40,9 +41,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .maybeSingle();
     if (error || !data) {
       setProfile(null);
-    } else {
-      setProfile(data as Profile);
+      setProfileLoading(false);
+      return;
     }
+    let next = data as Profile;
+    if (next.role === 'lawyer') {
+      try {
+        await refreshLawyerSubscriptionIfExpired();
+        const { data: again } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', s.user.id)
+          .maybeSingle();
+        if (again) next = again as Profile;
+      } catch {
+        /* RPC opcional si la migración aún no está aplicada */
+      }
+    }
+    setProfile(next);
     setProfileLoading(false);
   }, []);
 
