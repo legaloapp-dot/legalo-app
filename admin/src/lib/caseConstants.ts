@@ -15,6 +15,21 @@ export const CASE_STATUSES = [
 
 export type CaseStatus = (typeof CASE_STATUSES)[number];
 
+/** Etiquetas UI admin (listado y detalle de casos). */
+export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
+  awaiting_payment: "Validando pago",
+  pending_approval: "Pendiente de aprobación",
+  rejected_by_lawyer: "Rechazado por abogado",
+  reassignment_pending: "Reasignación pendiente",
+  active: "Activo",
+  in_court: "En tribunal",
+  pending: "Pendiente",
+  closed: "Cerrado",
+  drafting: "Borrador",
+  consulting: "Consulta",
+  paid: "Pagado",
+};
+
 export type CaseRow = {
   id: string;
   client_id: string;

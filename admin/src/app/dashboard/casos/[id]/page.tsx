@@ -2,23 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { getCaseById, updateCaseAction, deleteCaseAction } from "@/actions/cases";
-import { CASE_STATUSES, type CaseStatus } from "@/lib/caseConstants";
+import { CASE_STATUSES, CASE_STATUS_LABELS, type CaseStatus } from "@/lib/caseConstants";
 import { listClientsWithEmail } from "@/actions/clients";
 import { listLawyersWithEmail } from "@/actions/lawyers";
 import { DeleteButton } from "@/components/DeleteButton";
 import { ArrowLeft } from "lucide-react";
-
-const STATUS_LABELS: Record<CaseStatus, string> = {
-  pending_approval: "Pendiente de aprobación",
-  rejected_by_lawyer: "Rechazado por abogado",
-  active: "Activo",
-  in_court: "En tribunal",
-  pending: "Pendiente",
-  closed: "Cerrado",
-  drafting: "Borrador",
-  consulting: "Consulta",
-  paid: "Pagado",
-};
 
 export default async function EditarCasoPage({
   params,
@@ -135,7 +123,7 @@ export default async function EditarCasoPage({
             >
               {CASE_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
+                  {CASE_STATUS_LABELS[s]}
                 </option>
               ))}
             </select>

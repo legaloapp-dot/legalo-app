@@ -1,23 +1,11 @@
 import Link from "next/link";
 import { AdminHeader } from "@/components/layout/AdminHeader";
 import { listCasesEnriched, createCaseAction, deleteCaseAction } from "@/actions/cases";
-import { CASE_STATUSES, type CaseStatus } from "@/lib/caseConstants";
+import { CASE_STATUSES, CASE_STATUS_LABELS, type CaseStatus } from "@/lib/caseConstants";
 import { listClientsWithEmail } from "@/actions/clients";
 import { listLawyersWithEmail } from "@/actions/lawyers";
 import { DeleteButton } from "@/components/DeleteButton";
 import { Pencil } from "lucide-react";
-
-const STATUS_LABELS: Record<CaseStatus, string> = {
-  pending_approval: "Pendiente de aprobación",
-  rejected_by_lawyer: "Rechazado por abogado",
-  active: "Activo",
-  in_court: "En tribunal",
-  pending: "Pendiente",
-  closed: "Cerrado",
-  drafting: "Borrador",
-  consulting: "Consulta",
-  paid: "Pagado",
-};
 
 export default async function CasosPage() {
   const [rows, clients, lawyers] = await Promise.all([
@@ -128,7 +116,7 @@ export default async function CasosPage() {
             >
               {CASE_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
+                  {CASE_STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -188,7 +176,7 @@ export default async function CasosPage() {
                   <td>{r.lawyer_name ?? "—"}</td>
                   <td>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-700">
-                      {STATUS_LABELS[r.status as CaseStatus] ?? r.status}
+                      {CASE_STATUS_LABELS[r.status as CaseStatus] ?? r.status}
                     </span>
                   </td>
                   <td className="max-w-[220px] truncate text-slate-500">
