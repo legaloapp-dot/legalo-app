@@ -133,6 +133,7 @@ export function PagosTableClient({ rows }: { rows: TransactionRow[] }) {
         <thead>
           <tr>
             <th>Fecha</th>
+            <th>Tipo</th>
             <th>Cliente</th>
             <th>Email</th>
             <th>Abogado</th>
@@ -154,6 +155,13 @@ export function PagosTableClient({ rows }: { rows: TransactionRow[] }) {
               <tr key={t.id}>
                 <td className="whitespace-nowrap text-slate-500">
                   {new Date(t.created_at).toLocaleString("es-VE")}
+                </td>
+                <td className="text-slate-600">
+                  {t.purpose === "lawyer_subscription" ? (
+                    <span className="font-semibold text-indigo-700">Suscripción abogado</span>
+                  ) : (
+                    <span>Fee contacto</span>
+                  )}
                 </td>
                 <td className="font-medium">{t.client_name ?? "—"}</td>
                 <td className="max-w-[140px] truncate font-mono text-[11px]">{t.client_email}</td>

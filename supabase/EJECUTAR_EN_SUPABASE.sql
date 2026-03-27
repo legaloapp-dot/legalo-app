@@ -900,3 +900,187 @@ grant execute on function public.refresh_lawyer_subscription() to authenticated;
 
 alter table public.profiles
   add column if not exists subscription_paid_at timestamptz;
+
+-- === Historial pagos suscripción abogado (migrations/20260409120000_lawyer_subscription_payments.sql) ===
+
+create table if not exists public.lawyer_subscription_payments (
+  id uuid primary key default gen_random_uuid(),
+  lawyer_id uuid not null references public.profiles(id) on delete cascade,
+  amount numeric(12, 2) not null,
+  currency text not null default 'USD',
+  paid_at timestamptz not null,
+  description text,
+  status text not null default 'completed'
+    check (status in ('completed', 'pending', 'refunded')),
+  created_at timestamptz default now()
+);
+
+create index if not exists lawyer_subscription_payments_lawyer_paid_idx
+  on public.lawyer_subscription_payments (lawyer_id, paid_at desc);
+
+alter table public.lawyer_subscription_payments enable row level security;
+
+drop policy if exists "Lawyers read own subscription payments" on public.lawyer_subscription_payments;
+create policy "Lawyers read own subscription payments"
+  on public.lawyer_subscription_payments for select
+  using (auth.uid() = lawyer_id);
+
+create or replace function public.lawyer_cancel_own_subscription()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'No autenticado';
+  end if;
+
+  update public.profiles
+  set
+    plan = 'basic',
+    subscription_expires_at = null
+  where id = auth.uid()
+    and role = 'lawyer'
+    and plan in ('trial', 'premium');
+end;
+$$;
+
+grant execute on function public.lawyer_cancel_own_subscription() to authenticated;
+
+-- === Transacciones: purpose + suscripción abogado (migrations/20260410120000_lawyer_subscription_transactions.sql) ===
+
+alter table public.transactions
+  add column if not exists purpose text not null default 'case_contact'
+  check (purpose in ('case_contact', 'lawyer_subscription'));
+
+comment on column public.transactions.purpose is 'case_contact: fee contacto; lawyer_subscription: abogado paga suscripción (client_id = abogado, lawyer_id null).';
+
+alter table public.lawyer_subscription_payments
+  add column if not exists transaction_id uuid references public.transactions(id) on delete set null;
+
+create unique index if not exists lawyer_subscription_payments_transaction_id_key
+  on public.lawyer_subscription_payments (transaction_id)
+  where transaction_id is not null;
+
+create or replace function public.notify_client_on_transaction_status()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if coalesce(new.purpose, 'case_contact') <> 'case_contact' then
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' and new.status is distinct from old.status then
+    if new.status = 'approved' and coalesce(old.status, '') is distinct from 'approved' then
+      insert into public.client_notifications (client_id, type, title, body, ref_id)
+      values (
+        new.client_id,
+        'payment_approved',
+        'Pago confirmado',
+        'Tu comprobante fue aprobado. El abogado podrá revisar tu caso cuando corresponda.',
+        new.id
+      );
+    elsif new.status = 'rejected' and coalesce(old.status, '') is distinct from 'rejected' then
+      insert into public.client_notifications (client_id, type, title, body, ref_id)
+      values (
+        new.client_id,
+        'payment_rejected',
+        'Pago no verificado',
+        'Tu comprobante no fue aprobado. Revisa la pestaña Pagos o sube un nuevo comprobante.',
+        new.id
+      );
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tr_tx_notify_client on public.transactions;
+create trigger tr_tx_notify_client
+  after update on public.transactions
+  for each row
+  execute function public.notify_client_on_transaction_status();
+
+alter table public.lawyer_notifications drop constraint if exists lawyer_notifications_type_check;
+
+alter table public.lawyer_notifications
+  add constraint lawyer_notifications_type_check
+  check (type in (
+    'account_approved',
+    'new_case',
+    'new_lead',
+    'case_rated',
+    'subscription_approved'
+  ));
+
+create or replace function public.apply_lawyer_subscription_on_tx_approve()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE'
+     and new.status = 'approved'
+     and old.status is distinct from 'approved'
+     and coalesce(new.purpose, 'case_contact') = 'lawyer_subscription'
+     and new.client_id is not null
+  then
+    update public.profiles
+    set
+      plan = 'premium',
+      subscription_expires_at = (now() at time zone 'utc') + interval '30 days',
+      subscription_paid_at = (now() at time zone 'utc')
+    where id = new.client_id
+      and role = 'lawyer';
+
+    if not exists (
+      select 1 from public.lawyer_subscription_payments p where p.transaction_id = new.id
+    ) then
+      insert into public.lawyer_subscription_payments (
+        lawyer_id,
+        amount,
+        currency,
+        paid_at,
+        description,
+        status,
+        transaction_id
+      )
+      values (
+        new.client_id,
+        coalesce(new.amount, 0),
+        'USD',
+        (now() at time zone 'utc'),
+        'Suscripción Premium LÉGALO',
+        'completed',
+        new.id
+      );
+    end if;
+
+    if not exists (
+      select 1 from public.lawyer_notifications n
+      where n.ref_id = new.id and n.type = 'subscription_approved'
+    ) then
+      insert into public.lawyer_notifications (lawyer_id, type, title, body, ref_id)
+      values (
+        new.client_id,
+        'subscription_approved',
+        'Premium activado',
+        'Tu pago fue confirmado. Tu plan Premium está activo hasta la fecha indicada en Pagos.',
+        new.id
+      );
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tr_apply_lawyer_subscription_on_tx on public.transactions;
+create trigger tr_apply_lawyer_subscription_on_tx
+  after update on public.transactions
+  for each row
+  execute function public.apply_lawyer_subscription_on_tx_approve();

@@ -12,6 +12,8 @@ export type TransactionRow = {
   status: string;
   receipt_url: string | null;
   created_at: string;
+  /** case_contact | lawyer_subscription */
+  purpose: string | null;
   client_name: string | null;
   lawyer_name: string | null;
   client_email: string;
@@ -65,6 +67,7 @@ export async function listTransactionsEnriched(): Promise<TransactionRow[]> {
         status: t.status as string,
         receipt_url: path,
         created_at: t.created_at as string,
+        purpose: (t.purpose as string | null | undefined) ?? "case_contact",
         client_name: cid ? (nameById[cid] ?? null) : null,
         lawyer_name: lid ? (nameById[lid] ?? null) : null,
         client_email: cid ? (emailById[cid] ?? "—") : "—",

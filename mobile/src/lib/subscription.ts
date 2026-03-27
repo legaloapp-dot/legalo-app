@@ -39,3 +39,9 @@ export async function refreshLawyerSubscriptionIfExpired(): Promise<void> {
   const { error } = await supabase.rpc('refresh_lawyer_subscription');
   if (error) throw error;
 }
+
+/** Pasa a plan básico (sin prioridad en directorio). La reactivación la gestiona el equipo. */
+export async function cancelLawyerSubscription(): Promise<void> {
+  const { error } = await supabase.rpc('lawyer_cancel_own_subscription');
+  if (error) throw error;
+}

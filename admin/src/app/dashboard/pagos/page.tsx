@@ -9,7 +9,7 @@ export default async function PagosPage() {
     <>
       <AdminHeader
         title="Pagos"
-        description="Comprobantes de pago móvil: aprueba o rechaza para desbloquear el contacto con el abogado."
+        description="Comprobantes de pago móvil: fee de contacto cliente–abogado y suscripciones Premium de abogados. Aprueba o rechaza para activar el flujo correspondiente."
       />
 
       <PagosTableClient rows={rows} />

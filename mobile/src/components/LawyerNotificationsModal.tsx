@@ -24,6 +24,8 @@ function iconForType(t: LawyerNotificationType): keyof typeof Ionicons.glyphMap 
       return 'person-add';
     case 'case_rated':
       return 'star';
+    case 'subscription_approved':
+      return 'ribbon-outline';
     default:
       return 'notifications';
   }

@@ -4,7 +4,8 @@ export type LawyerNotificationType =
   | 'account_approved'
   | 'new_case'
   | 'new_lead'
-  | 'case_rated';
+  | 'case_rated'
+  | 'subscription_approved';
 
 export interface LawyerNotificationRow {
   id: string;

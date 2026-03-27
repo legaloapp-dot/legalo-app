@@ -34,11 +34,13 @@ import LawyerCasosPanel from './lawyer/LawyerCasosPanel';
 import LawyerCaseDetailModal from './lawyer/LawyerCaseDetailModal';
 import LawyerProfileEditTab from './lawyer/LawyerProfileEditTab';
 import LawyerPaymentsTab from './lawyer/LawyerPaymentsTab';
+import LawyerSubscriptionPaymentScreen from './lawyer/LawyerSubscriptionPaymentScreen';
 import LawyerNotificationsModal from '../components/LawyerNotificationsModal';
 import LawyerNotificationBell from '../components/LawyerNotificationBell';
 import { useLawyerNotifications } from '../hooks/useLawyerNotifications';
 import { registerAndSaveLawyerPushToken } from '../lib/pushNotifications';
 import BannerVencimiento from '../components/BannerVencimiento';
+import LawyerRatingsModal from '../components/LawyerRatingsModal';
 
 const WHATSAPP = '#25D366';
 
@@ -55,6 +57,8 @@ export default function LawyerDashboardScreen() {
   const [selectedCase, setSelectedCase] = useState<LegalCaseRow | null>(null);
   const [caseModalVisible, setCaseModalVisible] = useState(false);
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
+  const [subscriptionPaymentOpen, setSubscriptionPaymentOpen] = useState(false);
+  const [ratingsModalVisible, setRatingsModalVisible] = useState(false);
 
   useEffect(() => {
     setReceivingCases(profile?.accepting_cases ?? true);
@@ -72,12 +76,6 @@ export default function LawyerDashboardScreen() {
     await refreshProfile();
     setRefreshing(false);
   }, [dashboard, notifications, refreshProfile]);
-
-  const onPaymentsRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await refreshProfile();
-    setRefreshing(false);
-  }, [refreshProfile]);
 
   const persistAccepting = async (v: boolean) => {
     if (!lawyerId) return;
@@ -121,6 +119,21 @@ export default function LawyerDashboardScreen() {
     if (r == null || Number.isNaN(Number(r))) return { main: '—', showSlash: false };
     return { main: Number(r).toFixed(1), showSlash: true };
   }, [profile?.professional_rating]);
+
+  const ratedCasesForModal = useMemo(() => {
+    return dashboard.cases
+      .filter(
+        (c) =>
+          c.client_rating != null &&
+          c.client_rating >= 1 &&
+          c.client_rating <= 5
+      )
+      .sort((a, b) => {
+        const ta = a.client_rating_at ? new Date(a.client_rating_at).getTime() : 0;
+        const tb = b.client_rating_at ? new Date(b.client_rating_at).getTime() : 0;
+        return tb - ta;
+      });
+  }, [dashboard.cases]);
 
   const activityFeed = useMemo(
     () => buildLawyerDashboardActivity(dashboard.cases, dashboard.activity),
@@ -206,6 +219,21 @@ export default function LawyerDashboardScreen() {
   }
 
   if (tab === 'payments') {
+    if (subscriptionPaymentOpen && lawyerId) {
+      return (
+        <>
+          <LawyerSubscriptionPaymentScreen
+            lawyerId={lawyerId}
+            onBack={() => setSubscriptionPaymentOpen(false)}
+            onSubmitted={() => {
+              setSubscriptionPaymentOpen(false);
+              void refreshProfile();
+            }}
+          />
+          {notificationsModalEl}
+        </>
+      );
+    }
     return (
       <>
         <SafeAreaView style={styles.safe} edges={['top']}>
@@ -223,8 +251,8 @@ export default function LawyerDashboardScreen() {
           <View style={styles.trialBannerSlot}>{trialBannerEl}</View>
           <LawyerPaymentsTab
             profile={profile}
-            refreshing={refreshing}
-            onRefresh={() => void onPaymentsRefresh()}
+            lawyerId={lawyerId ?? ''}
+            onOpenSubscriptionPayment={() => setSubscriptionPaymentOpen(true)}
           />
           <LawyerBottomNav active={tab} onChange={setTab} />
         </SafeAreaView>
@@ -329,8 +357,17 @@ export default function LawyerDashboardScreen() {
               {String(dashboard.activeCaseCount).padStart(2, '0')}
             </Text>
           </View>
-          <View style={[styles.metricCard, styles.metricGold, styles.metricHalf]}>
-            <Ionicons name="star" size={36} color={colors.onPrimary} />
+          <TouchableOpacity
+            style={[styles.metricCard, styles.metricGold, styles.metricHalf]}
+            activeOpacity={0.88}
+            onPress={() => setRatingsModalVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Ver valoraciones de clientes"
+          >
+            <View style={styles.metricGoldTop}>
+              <Ionicons name="star" size={36} color={colors.onPrimary} />
+              <Ionicons name="chevron-forward" size={20} color={colors.onPrimary} style={{ opacity: 0.85 }} />
+            </View>
             <Text style={styles.metricLabelGold}>Valoración profesional</Text>
             <View style={styles.ratingRow}>
               <Text style={styles.metricValueGold}>{ratingDisplay.main}</Text>
@@ -338,7 +375,8 @@ export default function LawyerDashboardScreen() {
                 <Text style={styles.ratingSlash}>/ 5.0</Text>
               ) : null}
             </View>
-          </View>
+            <Text style={styles.metricTapHint}>Toca para ver detalle</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.sectionHeader}>
@@ -455,6 +493,14 @@ export default function LawyerDashboardScreen() {
       />
 
       {notificationsModalEl}
+
+      <LawyerRatingsModal
+        visible={ratingsModalVisible}
+        onClose={() => setRatingsModalVisible(false)}
+        averageRating={profile?.professional_rating ?? null}
+        ratedCases={ratedCasesForModal}
+        loading={dashboard.loading && dashboard.cases.length === 0}
+      />
 
       <LawyerBottomNav active={tab} onChange={setTab} />
     </SafeAreaView>
@@ -609,6 +655,18 @@ const styles = StyleSheet.create({
     borderColor: colors.outlineVariant + '22',
   },
   metricGold: { backgroundColor: colors.secondary },
+  metricGoldTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  metricTapHint: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.onPrimary,
+    opacity: 0.85,
+    marginTop: 4,
+  },
   metricLabelDark: {
     fontSize: 10,
     fontWeight: '700',

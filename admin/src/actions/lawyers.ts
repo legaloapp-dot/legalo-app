@@ -189,6 +189,74 @@ export async function updateLawyerSubscriptionAction(formData: FormData) {
   revalidatePath(`/dashboard/abogados/${id}`);
 }
 
+export type LawyerSubscriptionPaymentRow = {
+  id: string;
+  lawyer_id: string;
+  amount: number;
+  currency: string;
+  paid_at: string;
+  description: string | null;
+  status: string;
+  created_at: string;
+};
+
+export async function listLawyerSubscriptionPayments(lawyerId: string): Promise<LawyerSubscriptionPaymentRow[]> {
+  await requireAdmin();
+  const admin = createServiceClient();
+  const { data, error } = await admin
+    .from("lawyer_subscription_payments")
+    .select("*")
+    .eq("lawyer_id", lawyerId)
+    .order("paid_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as LawyerSubscriptionPaymentRow[];
+}
+
+/** Registra un pago hacia la plataforma (historial visible para el abogado en la app). */
+export async function registerLawyerSubscriptionPaymentAction(formData: FormData) {
+  await requireAdmin();
+  const lawyerId = String(formData.get("lawyer_id") ?? "").trim();
+  const amountRaw = String(formData.get("amount") ?? "").trim();
+  const paidAtRaw = String(formData.get("paid_at") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const currency = String(formData.get("currency") ?? "USD").trim() || "USD";
+
+  if (!lawyerId) throw new Error("Abogado inválido");
+  if (!paidAtRaw) throw new Error("Indica la fecha del pago");
+  const amount = Number(amountRaw.replace(",", "."));
+  if (Number.isNaN(amount) || amount < 0) throw new Error("Importe inválido");
+
+  const paidAtIso = `${paidAtRaw}T12:00:00.000Z`;
+  const admin = createServiceClient();
+
+  const { error: insErr } = await admin.from("lawyer_subscription_payments").insert({
+    lawyer_id: lawyerId,
+    amount,
+    currency,
+    paid_at: paidAtIso,
+    description: description ?? "Suscripción LÉGALO",
+    status: "completed",
+    transaction_id: null,
+  });
+  if (insErr) throw new Error(insErr.message);
+
+  const { data: latest } = await admin
+    .from("lawyer_subscription_payments")
+    .select("paid_at")
+    .eq("lawyer_id", lawyerId)
+    .order("paid_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latest?.paid_at) {
+    await admin.from("profiles").update({ subscription_paid_at: latest.paid_at }).eq("id", lawyerId).eq("role", "lawyer");
+  }
+
+  revalidatePath("/dashboard/abogados");
+  revalidatePath(`/dashboard/abogados/${lawyerId}`);
+}
+
 /** Aprobar o rechazar verificación de abogado (`verification_action`: approve | reject). */
 export async function setLawyerVerificationAction(formData: FormData) {
   await requireAdmin();

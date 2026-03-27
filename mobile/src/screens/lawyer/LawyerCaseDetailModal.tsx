@@ -135,7 +135,7 @@ export default function LawyerCaseDetailModal({
             keyboardShouldPersistTaps="handled"
           >
             {!caseRow ? null : (
-              <>
+              <React.Fragment>
             <View style={styles.meta}>
               <Text style={styles.metaLabel}>Cliente</Text>
               <Text style={styles.metaValue}>
@@ -216,7 +216,7 @@ export default function LawyerCaseDetailModal({
                 <Text style={styles.saveBtnText}>Guardar observaciones</Text>
               )}
             </TouchableOpacity>
-              </>
+              </React.Fragment>
             )}
           </ScrollView>
         </KeyboardAvoidingView>

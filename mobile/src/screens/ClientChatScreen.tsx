@@ -13,6 +13,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -94,7 +95,7 @@ function digitsForWhatsApp(phone: string): string {
 }
 
 export default function ClientChatScreen() {
-  const { profile, session } = useAuth();
+  const { profile, session, refreshProfile } = useAuth();
   const clientId = session?.user?.id;
 
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
@@ -428,7 +429,11 @@ export default function ClientChatScreen() {
               hitSlop={8}
               accessibilityLabel="Ir a perfil"
             >
-              <Ionicons name="person" size={20} color={colors.chatOutline} />
+              {profile?.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={styles.profileAvatarImage} />
+              ) : (
+                <Ionicons name="person" size={20} color={colors.chatOutline} />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -592,7 +597,12 @@ export default function ClientChatScreen() {
           </View>
         ) : activeTab === 'perfil' ? (
           <View style={styles.tabShell}>
-            <ClientProfileTab profile={profile} email={session?.user?.email ?? ''} />
+            <ClientProfileTab
+              profile={profile}
+              email={session?.user?.email ?? ''}
+              clientId={clientId}
+              refreshProfile={refreshProfile}
+            />
           </View>
         ) : (
           <View style={styles.missingClient}>
@@ -912,6 +922,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.chatOutlineVariant + '33',
+    overflow: 'hidden',
+  },
+  profileAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
 
   scrollView: { flex: 1 },

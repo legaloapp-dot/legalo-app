@@ -19,3 +19,19 @@ export const PAYMENT_INSTRUCTIONS = {
   rif: 'J-00000000-0',
   beneficiary: 'LÉGALO APP C.A.',
 } as const;
+
+/** Suscripción Premium abogado (directorio con prioridad). */
+export const LAWYER_PREMIUM_FEE_USD = 20;
+
+export const SUBSCRIPTION_PAYMENT_INSTRUCTIONS = {
+  title: 'Pago móvil',
+  lines: [
+    'Realiza el pago de USD 20.00 por la suscripción Premium al número corporativo de LÉGALO.',
+    'Usa exactamente el monto indicado y guarda el comprobante para subirlo aquí.',
+    'Cuando el administrador apruebe el comprobante en el panel, tu plan Premium se activará en la app.',
+  ],
+  bank: PAYMENT_INSTRUCTIONS.bank,
+  phonePm: PAYMENT_INSTRUCTIONS.phonePm,
+  rif: PAYMENT_INSTRUCTIONS.rif,
+  beneficiary: PAYMENT_INSTRUCTIONS.beneficiary,
+} as const;
