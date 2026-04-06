@@ -17,7 +17,7 @@ Clasificación Silenciosa: Al final de cada diagnóstico, genera un bloque JSON 
 
 Tu Conocimiento: Constitución de la RBV, Código Civil, Código de Comercio, LOTTT y Ley de Arrendamientos.`;
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 interface ChatRequest {
   message: string;
@@ -63,24 +63,33 @@ Deno.serve(async (req) => {
 
   try {
     let message: string;
+    let history: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+    
     try {
       const body = await req.json();
       message = body?.message ?? '';
+      history = body?.history ?? [];
     } catch {
       return new Response(
         JSON.stringify({ error: 'Cuerpo JSON inválido' }),
         { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       );
     }
+
     if (!message?.trim()) {
       return new Response(
         JSON.stringify({ error: 'Mensaje requerido' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
       );
     }
 
+    // Limitar el historial para no exceder tokens (últimos 10 mensajes)
+    const limitedHistory = history.slice(-10);
+
     const contents = [
+      ...limitedHistory,
       {
+        role: 'user',
         parts: [{ text: message.trim() }],
       },
     ];

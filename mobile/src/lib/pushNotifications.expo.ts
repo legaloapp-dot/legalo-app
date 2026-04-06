@@ -1,13 +1,3 @@
-/**
- * Implementación real de push (Expo). No importar este archivo desde App ni desde el
- * entry: Metro lo empaquetaría y volvería a exigir `expo-notifications` resuelto.
- *
- * Para activar push en el abogado:
- * 1) En `pushNotifications.ts`, reemplaza el cuerpo por:
- *    `export { registerAndSaveLawyerPushToken } from './pushNotifications.expo';`
- * 2) En `App.tsx`, añade: `import './src/lib/pushNotifications.expo';` (efecto: setNotificationHandler)
- * 3) `npx expo install expo-notifications expo-device expo-constants` y `npm install` en `mobile/`
- */
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
@@ -24,7 +14,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export async function registerAndSaveLawyerPushToken(userId: string): Promise<void> {
+async function registerAndSaveToken(userId: string): Promise<void> {
   if (!Device.isDevice) return;
 
   if (Platform.OS === 'android') {
@@ -61,10 +51,13 @@ export async function registerAndSaveLawyerPushToken(userId: string): Promise<vo
       platform,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: 'user_id,expo_push_token' }
+    { onConflict: 'user_id,expo_push_token' },
   );
 
   if (error) {
     console.warn('[push]', error.message);
   }
 }
+
+export const registerAndSaveLawyerPushToken = (userId: string) => registerAndSaveToken(userId);
+export const registerAndSaveClientPushToken  = (userId: string) => registerAndSaveToken(userId);

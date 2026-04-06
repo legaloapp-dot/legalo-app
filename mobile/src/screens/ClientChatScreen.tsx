@@ -37,6 +37,7 @@ import { hasOpenConnectionCreditForLawyer } from '../lib/connectionCredits';
 import { useClientNotifications } from '../hooks/useClientNotifications';
 import ClientNotificationsModal from '../components/ClientNotificationsModal';
 import ClientNotificationBell from '../components/ClientNotificationBell';
+import { registerAndSaveClientPushToken } from '../lib/pushNotifications';
 
 type TabType = 'chat' | 'directorio' | 'casos' | 'pagos' | 'perfil';
 
@@ -114,6 +115,10 @@ export default function ClientChatScreen() {
   const [clientNotifVisible, setClientNotifVisible] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const clientNotifications = useClientNotifications(clientId);
+
+  useEffect(() => {
+    if (clientId) registerAndSaveClientPushToken(clientId);
+  }, [clientId]);
 
   const goToTab = (t: TabType) => {
     setActiveTab(t);
