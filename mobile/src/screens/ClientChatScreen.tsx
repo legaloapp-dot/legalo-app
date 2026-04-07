@@ -38,6 +38,8 @@ import { useClientNotifications } from '../hooks/useClientNotifications';
 import ClientNotificationsModal from '../components/ClientNotificationsModal';
 import ClientNotificationBell from '../components/ClientNotificationBell';
 import { registerAndSaveClientPushToken } from '../lib/pushNotifications';
+import { useChat } from '../hooks/useChat';
+import ConversationListModal from '../components/ConversationListModal';
 
 type TabType = 'chat' | 'directorio' | 'casos' | 'pagos' | 'perfil';
 
@@ -83,10 +85,6 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
 }
 
-function cleanCategoryFromText(text: string): string {
-  return text.replace(/\n*CATEGORIA:\s*\[?[^\]]*\]?\s*/gi, '').trim();
-}
-
 /** Solo dígitos, con prefijo 58, para wa.me */
 function digitsForWhatsApp(phone: string): string {
   let d = phone.replace(/\D/g, '');
@@ -99,10 +97,8 @@ export default function ClientChatScreen() {
   const { profile, session, refreshProfile } = useAuth();
   const clientId = session?.user?.id;
 
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
+  const chat = useChat(clientId);
   const [inputText, setInputText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('chat');
   const [lawyersByMessage, setLawyersByMessage] = useState<Record<string, Lawyer[]>>({});
   const [loadingLawyersFor, setLoadingLawyersFor] = useState<string | null>(null);
@@ -113,6 +109,7 @@ export default function ClientChatScreen() {
   const [paymentLawyer, setPaymentLawyer] = useState<DirectoryLawyer | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
   const [clientNotifVisible, setClientNotifVisible] = useState(false);
+  const [convListVisible, setConvListVisible] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const clientNotifications = useClientNotifications(clientId);
 
@@ -198,63 +195,13 @@ export default function ClientChatScreen() {
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
+  }, [chat.messages]);
 
-  const sendMessage = async () => {
+  const handleSend = () => {
     const text = inputText.trim();
-    if (!text || loading) return;
-
+    if (!text || chat.sending) return;
     setInputText('');
-    setError(null);
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: text,
-      time: formatTime(new Date()),
-    };
-    setMessages((prev) => [...prev, userMessage]);
-
-    setLoading(true);
-    const aiMessageId = (Date.now() + 1).toString();
-
-    try {
-      const { data, error: fnError } = await supabase.functions.invoke('legal-chat', {
-        body: { message: text },
-      });
-
-      if (fnError) {
-        const errMsg = typeof fnError === 'object' && fnError !== null && 'message' in fnError
-          ? (fnError as { message?: string }).message
-          : String(fnError);
-        throw new Error(data?.error || errMsg || 'Error al conectar con la función');
-      }
-      if (data?.error) throw new Error(data.error);
-
-      const response = data?.response || 'No pude procesar tu consulta. Intenta de nuevo.';
-      const category = data?.category || null;
-
-      const aiMessage: ChatMessage = {
-        id: aiMessageId,
-        type: 'ai',
-        content: cleanCategoryFromText(response),
-        time: formatTime(new Date()),
-        caseType: category || undefined,
-        showActions: !!category,
-      };
-      setMessages((prev) => [...prev, aiMessage]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al conectar con LÉGALO AI');
-      const fallbackMessage: ChatMessage = {
-        id: aiMessageId,
-        type: 'ai',
-        content: 'Lo siento, hubo un error al procesar tu consulta. Verifica tu conexión e intenta de nuevo.',
-        time: formatTime(new Date()),
-      };
-      setMessages((prev) => [...prev, fallbackMessage]);
-    } finally {
-      setLoading(false);
-    }
+    void chat.sendMessage(text);
   };
 
   if (paymentLawyer && clientId) {
@@ -421,6 +368,15 @@ export default function ClientChatScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
+            {activeTab === 'chat' && (
+              <TouchableOpacity
+                onPress={() => setConvListVisible(true)}
+                hitSlop={10}
+                accessibilityLabel="Ver conversaciones"
+              >
+                <Ionicons name="chatbubbles-outline" size={24} color={colors.chatPrimary} />
+              </TouchableOpacity>
+            )}
             <ClientNotificationBell
               unreadCount={clientNotifications.unreadCount}
               onPress={() => {
@@ -551,8 +507,8 @@ export default function ClientChatScreen() {
 
             {/* Chat Messages */}
             <View style={styles.chatContainer}>
-              {messages.map(renderMessage)}
-              {loading && (
+              {[WELCOME_MESSAGE, ...chat.messages].map(renderMessage)}
+              {chat.sending && (
                 <View style={[styles.messageRow, styles.loadingRow]}>
                   <View style={[styles.avatar, styles.avatarAi]}>
                     <Ionicons name="hardware-chip" size={20} color={colors.chatSecondary} />
@@ -564,8 +520,8 @@ export default function ClientChatScreen() {
                 </View>
               )}
             </View>
-            {error && (
-              <Text style={styles.errorText}>{error}</Text>
+            {chat.sendError && (
+              <Text style={styles.errorText}>{chat.sendError}</Text>
             )}
           </ScrollView>
         ) : activeTab === 'directorio' && clientId ? (
@@ -632,9 +588,9 @@ export default function ClientChatScreen() {
                 maxLength={500}
               />
               <TouchableOpacity
-                style={[styles.sendButton, loading && styles.sendButtonDisabled]}
-                onPress={sendMessage}
-                disabled={loading}
+                style={[styles.sendButton, chat.sending && styles.sendButtonDisabled]}
+                onPress={handleSend}
+                disabled={chat.sending}
               >
                 <Ionicons name="send" size={20} color={colors.chatSurface} />
               </TouchableOpacity>
@@ -747,6 +703,20 @@ export default function ClientChatScreen() {
           onMarkAllRead={() => void clientNotifications.markAllRead()}
         />
       ) : null}
+
+      <ConversationListModal
+        visible={convListVisible}
+        onClose={() => setConvListVisible(false)}
+        conversations={chat.conversations}
+        activeConversationId={chat.activeConversationId}
+        onSelect={(id) => void chat.switchConversation(id)}
+        onNewConversation={() => {
+          void chat.newConversation();
+          setConvListVisible(false);
+        }}
+        onDelete={(id) => void chat.deleteConversation(id)}
+        loading={chat.conversationsLoading}
+      />
 
       {createCaseLawyer && clientId ? (
         <CreateCaseScreen

@@ -17,7 +17,7 @@ Clasificación Silenciosa: Al final de cada diagnóstico, genera un bloque JSON 
 
 Tu Conocimiento: Constitución de la RBV, Código Civil, Código de Comercio, LOTTT y Ley de Arrendamientos.`;
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 interface ChatRequest {
   message: string;
