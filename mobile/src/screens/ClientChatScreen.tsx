@@ -40,6 +40,7 @@ import ClientNotificationBell from '../components/ClientNotificationBell';
 import { registerAndSaveClientPushToken } from '../lib/pushNotifications';
 import { useChat } from '../hooks/useChat';
 import ConversationListModal from '../components/ConversationListModal';
+import ChatMarkdownText from '../components/ChatMarkdownText';
 
 type TabType = 'chat' | 'directorio' | 'casos' | 'pagos' | 'perfil';
 
@@ -416,12 +417,6 @@ export default function ClientChatScreen() {
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Logo size='medium' />
-            {/* <View style={styles.headerTitle}>
-              <Text style={styles.headerBrand}>LÉGALO</Text>
-              <Text style={styles.headerSubtitle}>
-                DIAGNÓSTICO IA VENEZOLANA
-              </Text>
-            </View> */}
           </View>
           <View style={styles.headerRight}>
             {activeTab === 'chat' && (
@@ -962,7 +957,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
     minWidth: 0,
   },
   headerLeft: {
@@ -1047,20 +1042,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.chatSecondary,
-  },
-  headerTitle: {
-    gap: 2,
-  },
-  headerBrand: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.chatOnSurface,
-  },
-  headerSubtitle: {
-    fontSize: 10,
-    fontWeight: '500',
-    letterSpacing: 0.5,
-    color: colors.chatOutline,
   },
   headerRight: {
     flexDirection: 'row',

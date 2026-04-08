@@ -6,7 +6,6 @@ interface LogoProps {
   style?: ViewStyle;
 }
 
-/** Logo horizontal oficial (icono + wordmark) sobre fondo transparente o negro. */
 const SIZES = {
   small: { width: 112, height: 36 },
   medium: { width: 152, height: 48 },
