@@ -278,14 +278,16 @@ export default function ClientChatScreen() {
                     {loadingLawyersFor === msg.id ? 'Buscando...' : 'VER ABOGADOS'}
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
+                {/* TODO: VER ARTÍCULOS — sin funcionalidad implementada */}
+                {/* <TouchableOpacity style={styles.actionButton}>
                   <Ionicons name="document-text" size={16} color={colors.chatSecondary} />
                   <Text style={styles.actionText}>VER ARTÍCULOS</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton}>
+                </TouchableOpacity> */}
+                {/* TODO: ESTIMAR MONTO — sin funcionalidad implementada */}
+                {/* <TouchableOpacity style={styles.actionButton}>
                   <Ionicons name="calculator" size={16} color={colors.chatSecondary} />
                   <Text style={styles.actionText}>ESTIMAR MONTO</Text>
-                </TouchableOpacity>
+                </TouchableOpacity> */}
               </View>
             )}
             {msg.showActions && msg.caseType && lawyersByMessage[msg.id] !== undefined && (
