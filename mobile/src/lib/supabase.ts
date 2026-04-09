@@ -4,9 +4,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-if (!supabaseUrl || !supabaseAnonKey) {
+/** False en release si el build de EAS no inyectó las variables (faltan secretos en Expo). */
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http')
+);
+
+if (!isSupabaseConfigured) {
   console.warn(
-    '⚠️ Supabase no configurado. Crea mobile/.env con EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_ANON_KEY'
+    '⚠️ Supabase no configurado. En local: mobile/.env. En EAS: Project → Secrets → EXPO_PUBLIC_SUPABASE_URL y EXPO_PUBLIC_SUPABASE_ANON_KEY, luego nuevo build.'
   );
 }
 
