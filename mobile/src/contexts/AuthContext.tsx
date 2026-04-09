@@ -34,11 +34,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setProfileLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', s.user.id)
-      .maybeSingle();
+
+    const FETCH_MS = 15_000;
+    let data;
+    let error;
+    try {
+      const result = await Promise.race([
+        supabase.from('profiles').select('*').eq('id', s.user.id).maybeSingle(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), FETCH_MS)
+        ),
+      ]);
+      data = result.data;
+      error = result.error;
+    } catch (e) {
+      console.warn('[auth] refreshProfile', e instanceof Error ? e.message : e);
+      setProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+
     if (error || !data) {
       setProfile(null);
       setProfileLoading(false);
