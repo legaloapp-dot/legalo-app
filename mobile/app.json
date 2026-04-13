@@ -29,6 +29,14 @@
     },
     "plugins": [
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/logo.png",
+          "backgroundColor": "#ffffff",
+          "resizeMode": "contain"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "LÉGALO usa tu ubicación para mostrarte abogados cercanos en el directorio y para que guardes la ubicación de tu consultorio.",

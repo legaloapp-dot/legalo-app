@@ -82,7 +82,10 @@ const WELCOME_MESSAGE: ChatMessage = {
 };
 
 function formatTime(date: Date): string {
-  return date.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString('es-VE', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 /** Solo dígitos, con prefijo 58, para wa.me */
@@ -100,13 +103,22 @@ export default function ClientChatScreen() {
   const chat = useChat(clientId);
   const [inputText, setInputText] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('chat');
-  const [lawyersByMessage, setLawyersByMessage] = useState<Record<string, Lawyer[]>>({});
-  const [loadingLawyersFor, setLoadingLawyersFor] = useState<string | null>(null);
-  const [createCaseLawyer, setCreateCaseLawyer] = useState<CreateCaseLawyer | null>(null);
+  const [lawyersByMessage, setLawyersByMessage] = useState<
+    Record<string, Lawyer[]>
+  >({});
+  const [loadingLawyersFor, setLoadingLawyersFor] = useState<string | null>(
+    null
+  );
+  const [createCaseLawyer, setCreateCaseLawyer] =
+    useState<CreateCaseLawyer | null>(null);
   const [createCaseDeductCredit, setCreateCaseDeductCredit] = useState(false);
-  const [pendingTransactionId, setPendingTransactionId] = useState<string | null>(null);
+  const [pendingTransactionId, setPendingTransactionId] = useState<
+    string | null
+  >(null);
   const [contactChecking, setContactChecking] = useState(false);
-  const [paymentLawyer, setPaymentLawyer] = useState<DirectoryLawyer | null>(null);
+  const [paymentLawyer, setPaymentLawyer] = useState<DirectoryLawyer | null>(
+    null
+  );
   const [menuVisible, setMenuVisible] = useState(false);
   const [clientNotifVisible, setClientNotifVisible] = useState(false);
   const [convListVisible, setConvListVisible] = useState(false);
@@ -122,7 +134,10 @@ export default function ClientChatScreen() {
     setMenuVisible(false);
   };
 
-  const openWhatsAppWithCaseTitle = (lawyer: CreateCaseLawyer, caseTitle: string) => {
+  const openWhatsAppWithCaseTitle = (
+    lawyer: CreateCaseLawyer,
+    caseTitle: string
+  ) => {
     const raw = lawyer.phone?.trim();
     if (!raw) {
       Alert.alert('Sin teléfono', 'Este abogado no tiene número registrado.');
@@ -156,7 +171,8 @@ export default function ClientChatScreen() {
       ]);
       if (activeCase) {
         const title =
-          (await getFirstActiveCaseTitleForLawyer(clientId, lawyer.id)) ?? 'Mi caso';
+          (await getFirstActiveCaseTitleForLawyer(clientId, lawyer.id)) ??
+          'Mi caso';
         openWhatsAppWithCaseTitle(lawyer, title);
         return;
       }
@@ -185,7 +201,10 @@ export default function ClientChatScreen() {
         .in('specialty', specialties);
 
       if (qError) throw qError;
-      setLawyersByMessage((prev) => ({ ...prev, [messageId]: (data ?? []) as Lawyer[] }));
+      setLawyersByMessage((prev) => ({
+        ...prev,
+        [messageId]: (data ?? []) as Lawyer[],
+      }));
     } catch (err) {
       setLawyersByMessage((prev) => ({ ...prev, [messageId]: [] }));
     } finally {
@@ -236,10 +255,7 @@ export default function ClientChatScreen() {
         style={[styles.messageRow, isUser && styles.messageRowUser]}
       >
         <View
-          style={[
-            styles.avatar,
-            isUser ? styles.avatarUser : styles.avatarAi,
-          ]}
+          style={[styles.avatar, isUser ? styles.avatarUser : styles.avatarAi]}
         >
           <Ionicons
             name={isUser ? 'person' : 'hardware-chip'}
@@ -247,19 +263,18 @@ export default function ClientChatScreen() {
             color={isUser ? colors.chatSurface : colors.chatSecondary}
           />
         </View>
-        <View style={[styles.bubbleWrapper, isUser && styles.bubbleWrapperUser]}>
+        <View
+          style={[styles.bubbleWrapper, isUser && styles.bubbleWrapperUser]}
+        >
           <View style={[styles.bubble, isUser && styles.bubbleUser]}>
             {msg.caseType && (
               <View style={styles.caseBadge}>
-                <Text style={styles.caseBadgeText}>CASO DETECTADO: {msg.caseType}</Text>
+                <Text style={styles.caseBadgeText}>
+                  CASO DETECTADO: {msg.caseType}
+                </Text>
               </View>
             )}
-            <Text
-              style={[
-                styles.bubbleText,
-                isUser && styles.bubbleTextUser,
-              ]}
-            >
+            <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>
               {msg.content}
             </Text>
             {msg.showActions && msg.caseType && (
@@ -270,12 +285,21 @@ export default function ClientChatScreen() {
                   disabled={loadingLawyersFor === msg.id}
                 >
                   {loadingLawyersFor === msg.id ? (
-                    <ActivityIndicator size="small" color={colors.chatSecondary} />
+                    <ActivityIndicator
+                      size='small'
+                      color={colors.chatSecondary}
+                    />
                   ) : (
-                    <Ionicons name="people" size={16} color={colors.chatSecondary} />
+                    <Ionicons
+                      name='people'
+                      size={16}
+                      color={colors.chatSecondary}
+                    />
                   )}
                   <Text style={styles.actionText}>
-                    {loadingLawyersFor === msg.id ? 'Buscando...' : 'VER ABOGADOS'}
+                    {loadingLawyersFor === msg.id
+                      ? 'Buscando...'
+                      : 'VER ABOGADOS'}
                   </Text>
                 </TouchableOpacity>
                 {/* TODO: VER ARTÍCULOS — sin funcionalidad implementada */}
@@ -290,54 +314,82 @@ export default function ClientChatScreen() {
                 </TouchableOpacity> */}
               </View>
             )}
-            {msg.showActions && msg.caseType && lawyersByMessage[msg.id] !== undefined && (
-              <View style={styles.lawyerList}>
-                <Text style={styles.lawyerListTitle}>Abogados en {msg.caseType}</Text>
-                {lawyersByMessage[msg.id].length === 0 ? (
-                  <Text style={styles.lawyerEmpty}>
-                    No hay abogados en esta área por el momento. Prueba otra categoría.
+            {msg.showActions &&
+              msg.caseType &&
+              lawyersByMessage[msg.id] !== undefined && (
+                <View style={styles.lawyerList}>
+                  <Text style={styles.lawyerListTitle}>
+                    Abogados en {msg.caseType}
                   </Text>
-                ) : (
-                  lawyersByMessage[msg.id].map((lawyer) => (
-                    <View key={lawyer.id} style={styles.lawyerCard}>
-                      <View style={styles.lawyerAvatar}>
-                        <Ionicons name="person" size={24} color={colors.chatSecondary} />
-                      </View>
-                      <View style={styles.lawyerInfo}>
-                        <View style={styles.lawyerNameRow}>
-                          <Text style={styles.lawyerName}>{lawyer.full_name || 'Abogado'}</Text>
-                          {lawyer.is_verified && (
-                            <Ionicons name="checkmark-circle" size={14} color={colors.chatSecondary} />
+                  {lawyersByMessage[msg.id].length === 0 ? (
+                    <Text style={styles.lawyerEmpty}>
+                      No hay abogados en esta área por el momento. Prueba otra
+                      categoría.
+                    </Text>
+                  ) : (
+                    lawyersByMessage[msg.id].map((lawyer) => (
+                      <View key={lawyer.id} style={styles.lawyerCard}>
+                        <View style={styles.lawyerAvatar}>
+                          <Ionicons
+                            name='person'
+                            size={24}
+                            color={colors.chatSecondary}
+                          />
+                        </View>
+                        <View style={styles.lawyerInfo}>
+                          <View style={styles.lawyerNameRow}>
+                            <Text style={styles.lawyerName}>
+                              {lawyer.full_name || 'Abogado'}
+                            </Text>
+                            {lawyer.is_verified && (
+                              <Ionicons
+                                name='checkmark-circle'
+                                size={14}
+                                color={colors.chatSecondary}
+                              />
+                            )}
+                          </View>
+                          <Text style={styles.lawyerSpecialty}>
+                            {lawyer.specialty || msg.caseType}
+                          </Text>
+                          {lawyer.phone && (
+                            <Text style={styles.lawyerPhone}>
+                              {lawyer.phone}
+                            </Text>
                           )}
                         </View>
-                        <Text style={styles.lawyerSpecialty}>{lawyer.specialty || msg.caseType}</Text>
-                        {lawyer.phone && (
-                          <Text style={styles.lawyerPhone}>{lawyer.phone}</Text>
-                        )}
+                        <TouchableOpacity
+                          style={[
+                            styles.lawyerContact,
+                            contactChecking && styles.lawyerContactDisabled,
+                          ]}
+                          onPress={() => void contactLawyer(lawyer)}
+                          disabled={contactChecking}
+                          accessibilityRole='button'
+                          accessibilityLabel={`Contactar a ${
+                            lawyer.full_name || 'abogado'
+                          }`}
+                        >
+                          {contactChecking ? (
+                            <ActivityIndicator
+                              size='small'
+                              color={colors.chatSurface}
+                            />
+                          ) : (
+                            <Text style={styles.lawyerContactText}>
+                              Contactar
+                            </Text>
+                          )}
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity
-                        style={[
-                          styles.lawyerContact,
-                          contactChecking && styles.lawyerContactDisabled,
-                        ]}
-                        onPress={() => void contactLawyer(lawyer)}
-                        disabled={contactChecking}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Contactar a ${lawyer.full_name || 'abogado'}`}
-                      >
-                        {contactChecking ? (
-                          <ActivityIndicator size="small" color={colors.chatSurface} />
-                        ) : (
-                          <Text style={styles.lawyerContactText}>Contactar</Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  ))
-                )}
-              </View>
-            )}
+                    ))
+                  )}
+                </View>
+              )}
           </View>
-          <Text style={[styles.messageFooter, isUser && styles.messageFooterUser]}>
+          <Text
+            style={[styles.messageFooter, isUser && styles.messageFooterUser]}
+          >
             {isUser ? 'USTED' : 'LÉGALO AI'} • {msg.time}
           </Text>
         </View>
@@ -358,25 +410,31 @@ export default function ClientChatScreen() {
             style={styles.menuButton}
             onPress={() => setMenuVisible(true)}
             hitSlop={12}
-            accessibilityLabel="Menú del panel de cliente"
+            accessibilityLabel='Menú del panel de cliente'
           >
-            <Ionicons name="menu" size={26} color={colors.chatPrimary} />
+            <Ionicons name='menu' size={26} color={colors.chatPrimary} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Logo size="small" />
-            <View style={styles.headerTitle}>
+            <Logo size='medium' />
+            {/* <View style={styles.headerTitle}>
               <Text style={styles.headerBrand}>LÉGALO</Text>
-              <Text style={styles.headerSubtitle}>DIAGNÓSTICO IA VENEZOLANA</Text>
-            </View>
+              <Text style={styles.headerSubtitle}>
+                DIAGNÓSTICO IA VENEZOLANA
+              </Text>
+            </View> */}
           </View>
           <View style={styles.headerRight}>
             {activeTab === 'chat' && (
               <TouchableOpacity
                 onPress={() => setConvListVisible(true)}
                 hitSlop={10}
-                accessibilityLabel="Ver conversaciones"
+                accessibilityLabel='Ver conversaciones'
               >
-                <Ionicons name="chatbubbles-outline" size={24} color={colors.chatPrimary} />
+                <Ionicons
+                  name='chatbubbles-outline'
+                  size={24}
+                  color={colors.chatPrimary}
+                />
               </TouchableOpacity>
             )}
             <ClientNotificationBell
@@ -390,12 +448,15 @@ export default function ClientChatScreen() {
               style={styles.profileAvatar}
               onPress={() => goToTab('perfil')}
               hitSlop={8}
-              accessibilityLabel="Ir a perfil"
+              accessibilityLabel='Ir a perfil'
             >
               {profile?.avatar_url ? (
-                <Image source={{ uri: profile.avatar_url }} style={styles.profileAvatarImage} />
+                <Image
+                  source={{ uri: profile.avatar_url }}
+                  style={styles.profileAvatarImage}
+                />
               ) : (
-                <Ionicons name="person" size={20} color={colors.chatOutline} />
+                <Ionicons name='person' size={20} color={colors.chatOutline} />
               )}
             </TouchableOpacity>
           </View>
@@ -403,74 +464,137 @@ export default function ClientChatScreen() {
 
         <Modal
           visible={menuVisible}
-          animationType="fade"
+          animationType='fade'
           transparent
           onRequestClose={() => setMenuVisible(false)}
         >
           <View style={styles.menuBackdrop}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuVisible(false)} />
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setMenuVisible(false)}
+            />
             <View style={styles.menuSheetWrap}>
               <View style={styles.menuSheet}>
-              <Text style={styles.menuTitle}>Panel de cliente</Text>
-              <Text style={styles.menuSubtitle}>
-                Accede a cualquier sección sin pasar por el chat con la IA.
-              </Text>
+                <Text style={styles.menuTitle}>Panel de cliente</Text>
+                <Text style={styles.menuSubtitle}>
+                  Accede a cualquier sección sin pasar por el chat con la IA.
+                </Text>
 
-              <TouchableOpacity
-                style={[styles.menuRow, activeTab === 'chat' && styles.menuRowActive]}
-                onPress={() => goToTab('chat')}
-              >
-                <Ionicons name="chatbubbles-outline" size={22} color={colors.chatSecondary} />
-                <Text style={styles.menuRowText}>Chat con LÉGALO AI</Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.chatOutline} />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.menuRow,
+                    activeTab === 'chat' && styles.menuRowActive,
+                  ]}
+                  onPress={() => goToTab('chat')}
+                >
+                  <Ionicons
+                    name='chatbubbles-outline'
+                    size={22}
+                    color={colors.chatSecondary}
+                  />
+                  <Text style={styles.menuRowText}>Chat con LÉGALO AI</Text>
+                  <Ionicons
+                    name='chevron-forward'
+                    size={18}
+                    color={colors.chatOutline}
+                  />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.menuRow,
-                  styles.menuRowMultiline,
-                  activeTab === 'directorio' && styles.menuRowActive,
-                ]}
-                onPress={() => goToTab('directorio')}
-              >
-                <Ionicons name="people" size={22} color={colors.chatSecondary} style={styles.menuRowIconTop} />
-                <View style={styles.menuRowTextBlock}>
-                  <Text style={styles.menuRowTextTitle}>Directorio de abogados</Text>
-                  <Text style={styles.menuRowHint}>Busca y elige un abogado por tu cuenta</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.chatOutline} />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.menuRow,
+                    styles.menuRowMultiline,
+                    activeTab === 'directorio' && styles.menuRowActive,
+                  ]}
+                  onPress={() => goToTab('directorio')}
+                >
+                  <Ionicons
+                    name='people'
+                    size={22}
+                    color={colors.chatSecondary}
+                    style={styles.menuRowIconTop}
+                  />
+                  <View style={styles.menuRowTextBlock}>
+                    <Text style={styles.menuRowTextTitle}>
+                      Directorio de abogados
+                    </Text>
+                    <Text style={styles.menuRowHint}>
+                      Busca y elige un abogado por tu cuenta
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name='chevron-forward'
+                    size={18}
+                    color={colors.chatOutline}
+                  />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.menuRow, activeTab === 'casos' && styles.menuRowActive]}
-                onPress={() => goToTab('casos')}
-              >
-                <Ionicons name="folder-open-outline" size={22} color={colors.chatSecondary} />
-                <Text style={styles.menuRowText}>Mis casos</Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.chatOutline} />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.menuRow,
+                    activeTab === 'casos' && styles.menuRowActive,
+                  ]}
+                  onPress={() => goToTab('casos')}
+                >
+                  <Ionicons
+                    name='folder-open-outline'
+                    size={22}
+                    color={colors.chatSecondary}
+                  />
+                  <Text style={styles.menuRowText}>Mis casos</Text>
+                  <Ionicons
+                    name='chevron-forward'
+                    size={18}
+                    color={colors.chatOutline}
+                  />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.menuRow, activeTab === 'pagos' && styles.menuRowActive]}
-                onPress={() => goToTab('pagos')}
-              >
-                <Ionicons name="card-outline" size={22} color={colors.chatSecondary} />
-                <Text style={styles.menuRowText}>Pagos</Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.chatOutline} />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.menuRow,
+                    activeTab === 'pagos' && styles.menuRowActive,
+                  ]}
+                  onPress={() => goToTab('pagos')}
+                >
+                  <Ionicons
+                    name='card-outline'
+                    size={22}
+                    color={colors.chatSecondary}
+                  />
+                  <Text style={styles.menuRowText}>Pagos</Text>
+                  <Ionicons
+                    name='chevron-forward'
+                    size={18}
+                    color={colors.chatOutline}
+                  />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.menuRow, activeTab === 'perfil' && styles.menuRowActive]}
-                onPress={() => goToTab('perfil')}
-              >
-                <Ionicons name="person-circle-outline" size={22} color={colors.chatSecondary} />
-                <Text style={styles.menuRowText}>Mi perfil</Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.chatOutline} />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.menuRow,
+                    activeTab === 'perfil' && styles.menuRowActive,
+                  ]}
+                  onPress={() => goToTab('perfil')}
+                >
+                  <Ionicons
+                    name='person-circle-outline'
+                    size={22}
+                    color={colors.chatSecondary}
+                  />
+                  <Text style={styles.menuRowText}>Mi perfil</Text>
+                  <Ionicons
+                    name='chevron-forward'
+                    size={18}
+                    color={colors.chatOutline}
+                  />
+                </TouchableOpacity>
 
-              <TouchableOpacity style={styles.menuClose} onPress={() => setMenuVisible(false)}>
-                <Text style={styles.menuCloseText}>Cerrar</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.menuClose}
+                  onPress={() => setMenuVisible(false)}
+                >
+                  <Text style={styles.menuCloseText}>Cerrar</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -482,28 +606,33 @@ export default function ClientChatScreen() {
             ref={scrollRef}
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps='handled'
             showsVerticalScrollIndicator={false}
-            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+            onContentSizeChange={() =>
+              scrollRef.current?.scrollToEnd({ animated: true })
+            }
           >
             {/* Hero */}
             <View style={styles.hero}>
               <Text style={styles.heroLabel}>ASISTENCIA JURÍDICA DIGITAL</Text>
               <Text style={styles.heroTitle}>Consulta Inteligente</Text>
               <Text style={styles.heroDesc}>
-                Analizamos su situación bajo el marco legal de la República Bolivariana de
-                Venezuela en tiempo real.
+                Analizamos su situación bajo el marco legal de la República
+                Bolivariana de Venezuela en tiempo real.
               </Text>
               <TouchableOpacity
                 style={styles.heroDirectoryBtn}
                 onPress={() => setActiveTab('directorio')}
                 activeOpacity={0.88}
               >
-                <Ionicons name="people" size={20} color={colors.chatSurface} />
-                <Text style={styles.heroDirectoryBtnText}>Buscar abogado en el directorio</Text>
+                <Ionicons name='people' size={20} color={colors.chatSurface} />
+                <Text style={styles.heroDirectoryBtnText}>
+                  Buscar abogado en el directorio
+                </Text>
               </TouchableOpacity>
               <Text style={styles.heroDirectoryHint}>
-                No necesitas usar el chat: explora y elige un abogado cuando quieras.
+                No necesitas usar el chat: explora y elige un abogado cuando
+                quieras.
               </Text>
             </View>
 
@@ -513,11 +642,20 @@ export default function ClientChatScreen() {
               {chat.sending && (
                 <View style={[styles.messageRow, styles.loadingRow]}>
                   <View style={[styles.avatar, styles.avatarAi]}>
-                    <Ionicons name="hardware-chip" size={20} color={colors.chatSecondary} />
+                    <Ionicons
+                      name='hardware-chip'
+                      size={20}
+                      color={colors.chatSecondary}
+                    />
                   </View>
                   <View style={[styles.bubble, styles.loadingBubble]}>
-                    <ActivityIndicator size="small" color={colors.chatSecondary} />
-                    <Text style={styles.loadingText}>LÉGALO AI está analizando...</Text>
+                    <ActivityIndicator
+                      size='small'
+                      color={colors.chatSecondary}
+                    />
+                    <Text style={styles.loadingText}>
+                      LÉGALO AI está analizando...
+                    </Text>
                   </View>
                 </View>
               )}
@@ -542,7 +680,8 @@ export default function ClientChatScreen() {
               onOpenWhatsApp={async (l) => {
                 if (!clientId) return;
                 const title =
-                  (await getFirstActiveCaseTitleForLawyer(clientId, l.id)) ?? 'Mi caso';
+                  (await getFirstActiveCaseTitleForLawyer(clientId, l.id)) ??
+                  'Mi caso';
                 openWhatsAppWithCaseTitle(
                   { id: l.id, full_name: l.full_name, phone: l.phone },
                   title
@@ -569,7 +708,9 @@ export default function ClientChatScreen() {
           </View>
         ) : (
           <View style={styles.missingClient}>
-            <Text style={styles.placeholderText}>Inicia sesión para ver esta sección.</Text>
+            <Text style={styles.placeholderText}>
+              Inicia sesión para ver esta sección.
+            </Text>
           </View>
         )}
 
@@ -578,11 +719,11 @@ export default function ClientChatScreen() {
           <View style={styles.inputWrapper}>
             <View style={styles.inputBar}>
               <TouchableOpacity style={styles.attachButton}>
-                <Ionicons name="attach" size={22} color={colors.chatOutline} />
+                <Ionicons name='attach' size={22} color={colors.chatOutline} />
               </TouchableOpacity>
               <TextInput
                 style={styles.input}
-                placeholder="Escriba su consulta legal aquí..."
+                placeholder='Escriba su consulta legal aquí...'
                 placeholderTextColor={colors.chatOutline + '99'}
                 value={inputText}
                 onChangeText={setInputText}
@@ -590,11 +731,14 @@ export default function ClientChatScreen() {
                 maxLength={500}
               />
               <TouchableOpacity
-                style={[styles.sendButton, chat.sending && styles.sendButtonDisabled]}
+                style={[
+                  styles.sendButton,
+                  chat.sending && styles.sendButtonDisabled,
+                ]}
                 onPress={handleSend}
                 disabled={chat.sending}
               >
-                <Ionicons name="send" size={20} color={colors.chatSurface} />
+                <Ionicons name='send' size={20} color={colors.chatSurface} />
               </TouchableOpacity>
             </View>
           </View>
@@ -603,13 +747,18 @@ export default function ClientChatScreen() {
         {/* Bottom Nav */}
         <View style={styles.bottomNav}>
           <TouchableOpacity
-            style={[styles.navItem, activeTab === 'chat' && styles.navItemActive]}
+            style={[
+              styles.navItem,
+              activeTab === 'chat' && styles.navItemActive,
+            ]}
             onPress={() => setActiveTab('chat')}
           >
             <Ionicons
-              name="chatbubble"
+              name='chatbubble'
               size={22}
-              color={activeTab === 'chat' ? colors.chatSecondary : colors.chatOutline}
+              color={
+                activeTab === 'chat' ? colors.chatSecondary : colors.chatOutline
+              }
             />
             <Text
               style={[
@@ -621,13 +770,20 @@ export default function ClientChatScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.navItem, activeTab === 'directorio' && styles.navItemActive]}
+            style={[
+              styles.navItem,
+              activeTab === 'directorio' && styles.navItemActive,
+            ]}
             onPress={() => setActiveTab('directorio')}
           >
             <Ionicons
-              name="people"
+              name='people'
               size={22}
-              color={activeTab === 'directorio' ? colors.chatSecondary : colors.chatOutline}
+              color={
+                activeTab === 'directorio'
+                  ? colors.chatSecondary
+                  : colors.chatOutline
+              }
             />
             <Text
               style={[
@@ -639,13 +795,20 @@ export default function ClientChatScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.navItem, activeTab === 'casos' && styles.navItemActive]}
+            style={[
+              styles.navItem,
+              activeTab === 'casos' && styles.navItemActive,
+            ]}
             onPress={() => setActiveTab('casos')}
           >
             <Ionicons
-              name="folder-open"
+              name='folder-open'
               size={22}
-              color={activeTab === 'casos' ? colors.chatSecondary : colors.chatOutline}
+              color={
+                activeTab === 'casos'
+                  ? colors.chatSecondary
+                  : colors.chatOutline
+              }
             />
             <Text
               style={[
@@ -657,13 +820,20 @@ export default function ClientChatScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.navItem, activeTab === 'pagos' && styles.navItemActive]}
+            style={[
+              styles.navItem,
+              activeTab === 'pagos' && styles.navItemActive,
+            ]}
             onPress={() => setActiveTab('pagos')}
           >
             <Ionicons
-              name="card"
+              name='card'
               size={22}
-              color={activeTab === 'pagos' ? colors.chatSecondary : colors.chatOutline}
+              color={
+                activeTab === 'pagos'
+                  ? colors.chatSecondary
+                  : colors.chatOutline
+              }
             />
             <Text
               style={[
@@ -675,13 +845,20 @@ export default function ClientChatScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.navItem, activeTab === 'perfil' && styles.navItemActive]}
+            style={[
+              styles.navItem,
+              activeTab === 'perfil' && styles.navItemActive,
+            ]}
             onPress={() => setActiveTab('perfil')}
           >
             <Ionicons
-              name="person-circle"
+              name='person-circle'
               size={22}
-              color={activeTab === 'perfil' ? colors.chatSecondary : colors.chatOutline}
+              color={
+                activeTab === 'perfil'
+                  ? colors.chatSecondary
+                  : colors.chatOutline
+              }
             />
             <Text
               style={[
@@ -772,7 +949,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 12,
-    backgroundColor: colors.chatSurface + 'B3',
+    backgroundColor: '#F2F2F2',
     gap: 8,
   },
   menuButton: {
