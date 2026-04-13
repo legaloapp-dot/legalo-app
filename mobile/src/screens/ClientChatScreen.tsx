@@ -416,7 +416,7 @@ export default function ClientChatScreen() {
             <Ionicons name='menu' size={26} color={colors.chatPrimary} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Logo size='medium' />
+            <Logo size='small' />
           </View>
           <View style={styles.headerRight}>
             {activeTab === 'chat' && (
@@ -944,7 +944,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 12,
-    backgroundColor: '#F2F2F2',
+    backgroundColor: '#FFFFFF',
     gap: 8,
   },
   menuButton: {
