@@ -20,6 +20,17 @@ const AuthContext = createContext<AuthContextType>({
   refreshProfile: async () => {},
 });
 
+const SESSION_TIMEOUT_MS = 10_000;
+
+function getSessionWithTimeout() {
+  return Promise.race([
+    supabase.auth.getSession(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('getSession timeout')), SESSION_TIMEOUT_MS)
+    ),
+  ]);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,7 +38,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profileLoading, setProfileLoading] = useState(true);
 
   const refreshProfile = useCallback(async () => {
-    const { data: { session: s } } = await supabase.auth.getSession();
+    let s: Session | null = null;
+    try {
+      const { data } = await getSessionWithTimeout();
+      s = data.session;
+    } catch (e) {
+      console.warn('[auth] refreshProfile getSession', e instanceof Error ? e.message : e);
+      setProfile(null);
+      setProfileLoading(false);
+      return;
+    }
     if (!s?.user) {
       setProfile(null);
       setProfileLoading(false);
@@ -78,13 +98,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void supabase.auth
-      .getSession()
+    void getSessionWithTimeout()
       .then(({ data: { session: s } }) => {
         setSession(s);
       })
       .catch((e) => {
-        console.warn('[auth] getSession', e);
+        console.warn('[auth] getSession', e instanceof Error ? e.message : e);
+        setSession(null);
       })
       .finally(() => {
         setLoading(false);
