@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -57,10 +58,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <StatusBar style='dark' />
-      <AppContent />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <StatusBar style='dark' />
+        <AppContent />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 
