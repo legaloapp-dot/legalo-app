@@ -738,133 +738,6 @@ export default function ClientChatScreen() {
             </View>
           </View>
         )}
-
-        {/* Bottom Nav */}
-        <View style={styles.bottomNav}>
-          <TouchableOpacity
-            style={[
-              styles.navItem,
-              activeTab === 'chat' && styles.navItemActive,
-            ]}
-            onPress={() => setActiveTab('chat')}
-          >
-            <Ionicons
-              name='chatbubble'
-              size={22}
-              color={
-                activeTab === 'chat' ? colors.chatSecondary : colors.chatOutline
-              }
-            />
-            <Text
-              style={[
-                styles.navLabel,
-                activeTab === 'chat' && styles.navLabelActive,
-              ]}
-            >
-              Chat
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.navItem,
-              activeTab === 'directorio' && styles.navItemActive,
-            ]}
-            onPress={() => setActiveTab('directorio')}
-          >
-            <Ionicons
-              name='people'
-              size={22}
-              color={
-                activeTab === 'directorio'
-                  ? colors.chatSecondary
-                  : colors.chatOutline
-              }
-            />
-            <Text
-              style={[
-                styles.navLabel,
-                activeTab === 'directorio' && styles.navLabelActive,
-              ]}
-            >
-              Abogados
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.navItem,
-              activeTab === 'casos' && styles.navItemActive,
-            ]}
-            onPress={() => setActiveTab('casos')}
-          >
-            <Ionicons
-              name='folder-open'
-              size={22}
-              color={
-                activeTab === 'casos'
-                  ? colors.chatSecondary
-                  : colors.chatOutline
-              }
-            />
-            <Text
-              style={[
-                styles.navLabel,
-                activeTab === 'casos' && styles.navLabelActive,
-              ]}
-            >
-              Casos
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.navItem,
-              activeTab === 'pagos' && styles.navItemActive,
-            ]}
-            onPress={() => setActiveTab('pagos')}
-          >
-            <Ionicons
-              name='card'
-              size={22}
-              color={
-                activeTab === 'pagos'
-                  ? colors.chatSecondary
-                  : colors.chatOutline
-              }
-            />
-            <Text
-              style={[
-                styles.navLabel,
-                activeTab === 'pagos' && styles.navLabelActive,
-              ]}
-            >
-              Pagos
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.navItem,
-              activeTab === 'perfil' && styles.navItemActive,
-            ]}
-            onPress={() => setActiveTab('perfil')}
-          >
-            <Ionicons
-              name='person-circle'
-              size={22}
-              color={
-                activeTab === 'perfil'
-                  ? colors.chatSecondary
-                  : colors.chatOutline
-              }
-            />
-            <Text
-              style={[
-                styles.navLabel,
-                activeTab === 'perfil' && styles.navLabelActive,
-              ]}
-            >
-              Perfil
-            </Text>
-          </TouchableOpacity>
-        </View>
       </KeyboardAvoidingView>
 
       {clientId ? (
@@ -1348,6 +1221,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingBottom: 36,
     backgroundColor: colors.chatSurface + 'E6',
   },
   inputBar: {
@@ -1403,37 +1277,5 @@ const styles = StyleSheet.create({
     color: colors.error,
     marginTop: 12,
     textAlign: 'center',
-  },
-
-  bottomNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingBottom: 24,
-    backgroundColor: colors.chatSurface + 'B3',
-    borderTopWidth: 1,
-    borderTopColor: colors.chatOutlineVariant + '26',
-  },
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 8,
-    flex: 1,
-    minWidth: 0,
-  },
-  navItemActive: {
-    backgroundColor: colors.chatSecondaryContainer,
-    borderRadius: 12,
-  },
-  navLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: colors.chatOutline,
-    marginTop: 4,
-  },
-  navLabelActive: {
-    color: colors.chatSecondary,
   },
 });
