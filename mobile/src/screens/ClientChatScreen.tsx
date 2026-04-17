@@ -713,9 +713,6 @@ export default function ClientChatScreen() {
         {activeTab === 'chat' && (
           <View style={styles.inputWrapper}>
             <View style={styles.inputBar}>
-              <TouchableOpacity style={styles.attachButton}>
-                <Ionicons name='attach' size={22} color={colors.chatOutline} />
-              </TouchableOpacity>
               <TextInput
                 style={styles.input}
                 placeholder='Escriba su consulta legal aquí...'
@@ -725,16 +722,25 @@ export default function ClientChatScreen() {
                 multiline
                 maxLength={500}
               />
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  chat.sending && styles.sendButtonDisabled,
-                ]}
-                onPress={handleSend}
-                disabled={chat.sending}
-              >
-                <Ionicons name='send' size={20} color={colors.chatSurface} />
-              </TouchableOpacity>
+              <View style={styles.inputActions}>
+                <TouchableOpacity style={styles.attachButton}>
+                  <Ionicons
+                    name='attach'
+                    size={22}
+                    color={colors.chatOutline}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    chat.sending && styles.sendButtonDisabled,
+                  ]}
+                  onPress={handleSend}
+                  disabled={chat.sending}
+                >
+                  <Ionicons name='send' size={20} color={colors.chatSurface} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         )}
@@ -1225,12 +1231,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chatSurface + 'E6',
   },
   inputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
     backgroundColor: colors.chatSurface,
     borderRadius: 12,
     padding: 12,
-    gap: 12,
+    gap: 8,
     shadowColor: colors.chatPrimary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -1239,15 +1244,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.chatOutlineVariant + '4D',
   },
+  inputActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   attachButton: {
     padding: 4,
   },
   input: {
-    flex: 1,
     fontSize: 14,
     color: colors.chatOnSurface,
-    paddingVertical: 8,
-    maxHeight: 100,
+    paddingVertical: 4,
+    minHeight: 36,
+    maxHeight: 120,
   },
   sendButton: {
     width: 44,
