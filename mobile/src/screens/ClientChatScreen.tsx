@@ -14,6 +14,7 @@ import {
   Modal,
   Pressable,
   Image,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -288,6 +289,7 @@ export default function ClientChatScreen() {
   const handleSend = () => {
     const text = inputText.trim();
     if ((!text && attachments.length === 0) || chat.sending) return;
+    Keyboard.dismiss();
     setInputText('');
     setAttachments([]);
     void chat.sendMessage(text, attachments);
@@ -1447,7 +1449,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingBottom: 12,
+    paddingBottom: 36,
     backgroundColor: colors.chatSurface + 'E6',
   },
   inputBar: {
