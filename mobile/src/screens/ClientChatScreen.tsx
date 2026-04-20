@@ -879,16 +879,37 @@ export default function ClientChatScreen() {
                     color={colors.chatOutline}
                   />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.sendButton,
-                    chat.sending && styles.sendButtonDisabled,
-                  ]}
-                  onPress={handleSend}
-                  disabled={chat.sending}
-                >
-                  <Ionicons name='send' size={20} color={colors.chatSurface} />
-                </TouchableOpacity>
+                {chat.sending ? (
+                  <View style={styles.sendButtonSpinnerWrapper}>
+                    <ActivityIndicator
+                      size={52}
+                      color={colors.chatSecondary}
+                      style={styles.sendButtonSpinner}
+                    />
+                    <TouchableOpacity
+                      style={styles.sendButtonSending}
+                      onPress={() => chat.cancelSend()}
+                      accessibilityLabel='Cancelar envío'
+                    >
+                      <Ionicons
+                        name='stop'
+                        size={18}
+                        color={colors.chatSurface}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.sendButton}
+                    onPress={handleSend}
+                  >
+                    <Ionicons
+                      name='send'
+                      size={20}
+                      color={colors.chatSurface}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>
@@ -1466,8 +1487,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendButtonDisabled: {
-    opacity: 0.6,
+  sendButtonSpinnerWrapper: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonSpinner: {
+    position: 'absolute',
+  },
+  sendButtonSending: {
+    width: 32,
+    height: 32,
+    borderRadius: 4,
+    backgroundColor: colors.chatSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingRow: {
     marginTop: 8,

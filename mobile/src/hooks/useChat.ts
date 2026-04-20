@@ -90,6 +90,8 @@ export function useChat(clientId: string | undefined) {
   const initializedRef = useRef<string | null>(null);
   // Track if title has been generated for current conversation (prevents stale closure issues)
   const titleGeneratedForConvRef = useRef<string | null>(null);
+  // AbortController for cancelling in-flight AI requests
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const refreshConversations = useCallback(async () => {
     if (!clientId) {
@@ -375,6 +377,10 @@ export function useChat(clientId: string | undefined) {
 
       try {
         const aiInputText = text.trim() || '[Archivos adjuntos]';
+        // Create AbortController for this request
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         const { data, error: fnError } = await supabase.functions.invoke(
           'legal-chat',
           {
@@ -387,6 +393,11 @@ export function useChat(clientId: string | undefined) {
             },
           }
         );
+
+        // Check if request was aborted
+        if (controller.signal.aborted) {
+          return;
+        }
 
         if (fnError) {
           const errMsg =
@@ -453,11 +464,21 @@ export function useChat(clientId: string | undefined) {
         };
         setMessages((prev) => [...prev, fallbackMsg]);
       } finally {
+        abortControllerRef.current = null;
         setSending(false);
       }
     },
     [clientId, activeConversationId, messages]
   );
+
+  const cancelSend = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setSending(false);
+    setSendError(null);
+  }, []);
 
   return {
     conversations,
@@ -469,6 +490,7 @@ export function useChat(clientId: string | undefined) {
     sendMessage,
     sending,
     sendError,
+    cancelSend,
     newConversation,
     switchConversation,
     deleteConversation,
