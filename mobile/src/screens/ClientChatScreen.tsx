@@ -515,7 +515,7 @@ export default function ClientChatScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboardView}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        keyboardVerticalOffset={0}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -1447,7 +1447,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingBottom: 36,
+    paddingBottom: 12,
     backgroundColor: colors.chatSurface + 'E6',
   },
   inputBar: {
