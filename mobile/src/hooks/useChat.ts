@@ -4,15 +4,17 @@ import {
   createConversation,
   deleteConversation as dbDeleteConversation,
   fetchAttachmentsForConversation,
+  fetchBase64FromSignedUrl,
   fetchConversationMessages,
   fetchConversations,
   insertConversationMessage,
   saveConversationAttachment,
-  toGeminiHistory,
+  toGeminiHistoryWithAttachments,
   updateConversationTitle,
   uploadChatAttachment,
   type ConversationMessageRow,
   type ConversationRow,
+  type HistoryAttachment,
 } from '../lib/chatConversations';
 
 export interface UploadAttachment {
@@ -67,8 +69,8 @@ function rowToChatMessage(row: ConversationMessageRow): ChatMessage {
   };
 }
 
-// 5MB limit for attachments sent to Gemini (base64 encoded)
-const MAX_ATTACHMENTS_SIZE_BYTES = 5 * 1024 * 1024;
+// 10MB limit for attachments sent to Gemini (base64 encoded)
+const MAX_ATTACHMENTS_SIZE_BYTES = 10 * 1024 * 1024;
 
 function estimateBase64Size(base64: string): number {
   // base64 string length * 0.75 ≈ original bytes (roughly)
@@ -371,7 +373,58 @@ export function useChat(clientId: string | undefined) {
           created_at: new Date().toISOString(),
         })
       );
-      const history = toGeminiHistory(currentRows);
+
+      // Fetch base64 for all image attachments in history (only user messages have attachments)
+      const historyAttachmentsByMsgId: Record<string, HistoryAttachment[]> = {};
+      let historyAttachmentsSize = 0;
+      const maxHistoryAttachmentsSize = MAX_ATTACHMENTS_SIZE_BYTES - totalSize; // Reserve space for new attachments
+
+      // Collect attachments from messages (most recent first to prioritize recent images)
+      const messagesWithAttachments = [...messages]
+        .reverse()
+        .filter((m) => m.attachments && m.attachments.length > 0);
+
+      for (const msg of messagesWithAttachments) {
+        if (!msg.attachments) continue;
+        const msgAtts: HistoryAttachment[] = [];
+
+        for (const att of msg.attachments) {
+          // Only include images (Gemini supports images in history)
+          if (!att.mimeType?.startsWith('image/')) continue;
+          if (!att.signedUrl) continue;
+
+          try {
+            const base64 = await fetchBase64FromSignedUrl(att.signedUrl);
+            const size = estimateBase64Size(base64);
+
+            // Check if adding this attachment would exceed the limit
+            if (historyAttachmentsSize + size > maxHistoryAttachmentsSize) {
+              break; // Stop adding more attachments
+            }
+
+            historyAttachmentsSize += size;
+            msgAtts.push({
+              messageId: msg.id,
+              base64,
+              mimeType: att.mimeType,
+            });
+          } catch {
+            // Skip failed downloads silently
+          }
+        }
+
+        if (msgAtts.length > 0) {
+          historyAttachmentsByMsgId[msg.id] = msgAtts;
+        }
+
+        // Stop if we've reached the size limit
+        if (historyAttachmentsSize >= maxHistoryAttachmentsSize) break;
+      }
+
+      const history = toGeminiHistoryWithAttachments(
+        currentRows,
+        historyAttachmentsByMsgId
+      );
 
       const aiMessageId = Date.now().toString();
 
