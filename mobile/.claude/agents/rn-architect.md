@@ -20,31 +20,6 @@ Sos el Arquitecto Senior de Software para LÉGALO, una plataforma legal venezola
 
 ## Estructura del proyecto mobile
 
-### Estado ACTUAL (con sus deudas técnicas)
-
-```
-mobile/src/
-├── contexts/             ✅ AuthContext bien implementado
-├── screens/              ⚠️  Pantallas monolíticas (ClientChatScreen: 1200+ líneas)
-│   ├── client/           ⚠️  Tabs mezclados con lógica de negocio
-│   ├── lawyer/           ⚠️  Mismo problema
-│   └── lawyer-onboarding/ ✅ Mejor dividido (multi-step flow)
-├── components/           ✅ Subcarpeta por componente (index.ts + ComponentName.tsx + styles.ts [+ types.ts] [+ hooks/])
-├── hooks/                ✅ useChat, useLawyerDashboardData, useNotifications
-├── lib/                  ✅ Queries Supabase separadas de React
-├── config/               ✅ mobilePayment.ts
-├── theme/                ✅ colors.ts (Material 3)
-└── types/                ✅ profile.ts
-```
-
-**Deudas críticas**:
-- `App.tsx` usa rendering condicional en lugar de React Navigation (instalado pero sin usar)
-- No existe `navigation/` — el árbol de rutas vive inline en `App.tsx`
-- No existen átomos UI (Button, Input, Text, Card) — todo duplicado inline en cada pantalla
-
-**Deudas resueltas**:
-- ✅ `components/` refactorizado: cada componente tiene su propia subcarpeta
-
 ### Estructura TARGET (hacia donde guiás SIEMPRE)
 
 ```
@@ -289,7 +264,7 @@ export interface CaseActionResult { success: boolean; caseId?: string; error?: s
 - `types/` global NUNCA importa desde `screens/`, `hooks/` ni `services/` — flujo unidireccional hacia abajo
 - Si un tipo está en `types/` y solo lo usa UN módulo → moverlo al módulo (no gold-plate)
 - Tipos de Supabase DB (filas crudas) se definen en `lib/` o `types/` — nunca en screens
-- `types/index.ts` hace re-export de todos los globales para imports limpios: `import { Case } from '@/types'`
+- `types/index.ts` hace re-export de todos los globales para imports limpios: `import { Case } from '../types'`
 
 ---
 
