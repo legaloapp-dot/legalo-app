@@ -3,14 +3,34 @@ import { supabase } from '../lib/supabase';
 import {
   createConversation,
   deleteConversation as dbDeleteConversation,
+  fetchAttachmentsForConversation,
   fetchConversationMessages,
   fetchConversations,
   insertConversationMessage,
+  saveConversationAttachment,
   toGeminiHistory,
   updateConversationTitle,
+  uploadChatAttachment,
+  type ConversationAttachmentRow,
   type ConversationMessageRow,
   type ConversationRow,
 } from '../lib/chatConversations';
+
+export interface UploadAttachment {
+  uri: string;
+  name: string;
+  type: 'image' | 'document';
+  mimeType: string;
+}
+
+export interface MessageAttachment {
+  id: string;
+  messageId: string;
+  storagePath: string;
+  fileName: string;
+  mimeType: string | null;
+  signedUrl?: string;
+}
 
 export interface ChatMessage {
   id: string;
@@ -19,6 +39,7 @@ export interface ChatMessage {
   time: string;
   caseType?: string;
   showActions?: boolean;
+  attachments?: MessageAttachment[];
 }
 
 function formatTime(date: Date): string {
@@ -77,8 +98,40 @@ export function useChat(clientId: string | undefined) {
   const loadMessages = useCallback(async (conversationId: string) => {
     setMessagesLoading(true);
     try {
-      const rows = await fetchConversationMessages(conversationId);
-      setMessages(rows.map(rowToChatMessage));
+      const [rows, attRows] = await Promise.all([
+        fetchConversationMessages(conversationId),
+        fetchAttachmentsForConversation(conversationId),
+      ]);
+
+      const signedUrlMap: Record<string, string> = {};
+      if (attRows.length > 0) {
+        const { data: signed } = await supabase.storage
+          .from('chat-attachments')
+          .createSignedUrls(attRows.map((a) => a.storage_path), 3600);
+        if (signed) {
+          for (const item of signed) {
+            if (item.signedUrl && item.path) signedUrlMap[item.path] = item.signedUrl;
+          }
+        }
+      }
+
+      const byMessage: Record<string, MessageAttachment[]> = {};
+      for (const att of attRows) {
+        if (!byMessage[att.message_id]) byMessage[att.message_id] = [];
+        byMessage[att.message_id].push({
+          id: att.id,
+          messageId: att.message_id,
+          storagePath: att.storage_path,
+          fileName: att.file_name,
+          mimeType: att.mime_type,
+          signedUrl: signedUrlMap[att.storage_path],
+        });
+      }
+
+      setMessages(rows.map((row) => ({
+        ...rowToChatMessage(row),
+        attachments: byMessage[row.id],
+      })));
     } catch {
       setMessages([]);
     } finally {
@@ -149,8 +202,9 @@ export function useChat(clientId: string | undefined) {
     }
   }, [activeConversationId, switchConversation]);
 
-  const sendMessage = useCallback(async (text: string) => {
-    if (!clientId || !text.trim()) return;
+  const sendMessage = useCallback(async (text: string, attachmentsToUpload: UploadAttachment[] = []) => {
+    const hasText = text.trim().length > 0;
+    if (!clientId || (!hasText && attachmentsToUpload.length === 0)) return;
 
     // If no active conversation, create one first
     let convId = activeConversationId;
@@ -169,6 +223,17 @@ export function useChat(clientId: string | undefined) {
     setSendError(null);
     setSending(true);
 
+    // Upload attachments to Storage
+    const uploadResults = await Promise.allSettled(
+      attachmentsToUpload.map(async (att) => {
+        const storagePath = await uploadChatAttachment(clientId, att.uri, att.name, att.mimeType);
+        return { att, storagePath };
+      })
+    );
+    const successfulUploads = uploadResults
+      .filter((r): r is PromiseFulfilledResult<{ att: UploadAttachment; storagePath: string }> => r.status === 'fulfilled')
+      .map((r) => r.value);
+
     // Insert user message to DB
     let userRow: ConversationMessageRow;
     try {
@@ -179,7 +244,39 @@ export function useChat(clientId: string | undefined) {
       return;
     }
 
-    const userMsg = rowToChatMessage(userRow);
+    // Save attachment records to DB + create signed URLs
+    const savedAttachments = await Promise.allSettled(
+      successfulUploads.map(async ({ att, storagePath }) => {
+        const saved = await saveConversationAttachment({
+          messageId: userRow.id,
+          conversationId: convId!,
+          userId: clientId,
+          storagePath,
+          fileName: att.name,
+          mimeType: att.mimeType,
+        });
+        const { data: signed } = await supabase.storage
+          .from('chat-attachments')
+          .createSignedUrl(storagePath, 3600);
+        const result: MessageAttachment = {
+          id: saved.id,
+          messageId: userRow.id,
+          storagePath,
+          fileName: att.name,
+          mimeType: att.mimeType,
+          signedUrl: signed?.signedUrl,
+        };
+        return result;
+      })
+    );
+    const finalAttachments: MessageAttachment[] = savedAttachments
+      .filter((r): r is PromiseFulfilledResult<MessageAttachment> => r.status === 'fulfilled')
+      .map((r) => r.value);
+
+    const userMsg: ChatMessage = {
+      ...rowToChatMessage(userRow),
+      attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
+    };
     setMessages((prev) => [...prev, userMsg]);
 
     // Check if this is the first user message (for auto-title)
@@ -200,8 +297,9 @@ export function useChat(clientId: string | undefined) {
     const aiMessageId = Date.now().toString();
 
     try {
+      const aiInputText = text.trim() || '[Archivos adjuntos]';
       const { data, error: fnError } = await supabase.functions.invoke('legal-chat', {
-        body: { message: text.trim(), history },
+        body: { message: aiInputText, history },
       });
 
       if (fnError) {

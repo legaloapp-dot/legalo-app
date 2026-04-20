@@ -1,4 +1,26 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from './supabase';
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binaryString = globalThis.atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+export interface ConversationAttachmentRow {
+  id: string;
+  message_id: string;
+  conversation_id: string;
+  user_id: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  file_size: number | null;
+  created_at: string;
+}
 
 export interface ConversationRow {
   id: string;
@@ -84,6 +106,59 @@ export async function insertConversationMessage(
     .single();
   if (error) throw error;
   return data as ConversationMessageRow;
+}
+
+export async function uploadChatAttachment(
+  userId: string,
+  uri: string,
+  fileName: string,
+  mimeType: string
+): Promise<string> {
+  const path = `${userId}/${Date.now()}-${fileName}`;
+  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  const buffer = base64ToArrayBuffer(base64);
+  const { error } = await supabase.storage
+    .from('chat-attachments')
+    .upload(path, buffer, { contentType: mimeType, cacheControl: '3600' });
+  if (error) throw error;
+  return path;
+}
+
+export async function saveConversationAttachment(params: {
+  messageId: string;
+  conversationId: string;
+  userId: string;
+  storagePath: string;
+  fileName: string;
+  mimeType: string;
+  fileSize?: number;
+}): Promise<ConversationAttachmentRow> {
+  const { data, error } = await supabase
+    .from('conversation_attachments')
+    .insert({
+      message_id: params.messageId,
+      conversation_id: params.conversationId,
+      user_id: params.userId,
+      storage_path: params.storagePath,
+      file_name: params.fileName,
+      mime_type: params.mimeType,
+      file_size: params.fileSize ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ConversationAttachmentRow;
+}
+
+export async function fetchAttachmentsForConversation(
+  conversationId: string
+): Promise<ConversationAttachmentRow[]> {
+  const { data, error } = await supabase
+    .from('conversation_attachments')
+    .select('*')
+    .eq('conversation_id', conversationId);
+  if (error) throw error;
+  return (data ?? []) as ConversationAttachmentRow[];
 }
 
 export function toGeminiHistory(

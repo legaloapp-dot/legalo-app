@@ -40,26 +40,13 @@ import { useClientNotifications } from '../hooks/useClientNotifications';
 import ClientNotificationsModal from '../components/ClientNotificationsModal';
 import ClientNotificationBell from '../components/ClientNotificationBell';
 import { registerAndSaveClientPushToken } from '../lib/pushNotifications';
-import { useChat } from '../hooks/useChat';
+import { useChat, type ChatMessage, type UploadAttachment } from '../hooks/useChat';
 import ConversationListModal from '../components/ConversationListModal';
 import ChatMarkdownText from '../components/ChatMarkdownText';
 
 type TabType = 'chat' | 'directorio' | 'casos' | 'pagos' | 'perfil';
 
-interface ChatMessage {
-  id: string;
-  type: 'ai' | 'user';
-  content: string;
-  time: string;
-  caseType?: string;
-  showActions?: boolean;
-}
-
-interface AttachmentItem {
-  uri: string;
-  name: string;
-  type: 'image' | 'document';
-}
+type AttachmentItem = UploadAttachment;
 
 interface Lawyer {
   id: string;
@@ -238,7 +225,7 @@ export default function ClientChatScreen() {
       const asset = result.assets[0];
       setAttachments((prev) => [
         ...prev,
-        { uri: asset.uri, name: asset.fileName ?? 'imagen.jpg', type: 'image' },
+        { uri: asset.uri, name: asset.fileName ?? 'imagen.jpg', type: 'image', mimeType: asset.mimeType ?? 'image/jpeg' },
       ]);
     }
   };
@@ -253,7 +240,7 @@ export default function ClientChatScreen() {
       const asset = result.assets[0];
       setAttachments((prev) => [
         ...prev,
-        { uri: asset.uri, name: asset.name, type: 'document' },
+        { uri: asset.uri, name: asset.name, type: 'document', mimeType: asset.mimeType ?? 'application/octet-stream' },
       ]);
     }
   };
@@ -261,14 +248,9 @@ export default function ClientChatScreen() {
   const handleSend = () => {
     const text = inputText.trim();
     if ((!text && attachments.length === 0) || chat.sending) return;
-    let fullText = text;
-    if (attachments.length > 0) {
-      const list = attachments.map((a) => `📎 ${a.name}`).join('\n');
-      fullText = text ? `${text}\n\n${list}` : list;
-    }
     setInputText('');
     setAttachments([]);
-    void chat.sendMessage(fullText);
+    void chat.sendMessage(text, attachments);
   };
 
   if (paymentLawyer && clientId) {
@@ -323,9 +305,11 @@ export default function ClientChatScreen() {
               </View>
             )}
             {isUser ? (
-              <Text style={[styles.bubbleText, styles.bubbleTextUser]}>
-                {msg.content}
-              </Text>
+              msg.content ? (
+                <Text style={[styles.bubbleText, styles.bubbleTextUser]}>
+                  {msg.content}
+                </Text>
+              ) : null
             ) : (
               <ChatMarkdownText
                 baseStyle={styles.bubbleText}
@@ -333,6 +317,27 @@ export default function ClientChatScreen() {
               >
                 {msg.content}
               </ChatMarkdownText>
+            )}
+            {msg.attachments && msg.attachments.length > 0 && (
+              <View style={styles.attachmentsContainer}>
+                {msg.attachments.map((att) =>
+                  att.mimeType?.startsWith('image/') && att.signedUrl ? (
+                    <Image
+                      key={att.id}
+                      source={{ uri: att.signedUrl }}
+                      style={styles.attachmentImage}
+                      resizeMode='cover'
+                    />
+                  ) : (
+                    <View key={att.id} style={styles.attachmentDocChip}>
+                      <Ionicons name='document' size={14} color={isUser ? colors.chatSurface : colors.chatSecondary} />
+                      <Text style={[styles.attachmentDocName, isUser && styles.attachmentDocNameUser]}>
+                        {att.fileName}
+                      </Text>
+                    </View>
+                  )
+                )}
+              </View>
             )}
             {msg.showActions && msg.caseType && (
               <View style={styles.actions}>
@@ -1426,6 +1431,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.chatSecondary,
     fontWeight: '600',
+  },
+
+  attachmentsContainer: {
+    marginTop: 6,
+    gap: 6,
+  },
+  attachmentImage: {
+    width: 200,
+    height: 150,
+    borderRadius: 8,
+  },
+  attachmentDocChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+  },
+  attachmentDocName: {
+    fontSize: 12,
+    color: colors.chatSecondary,
+    maxWidth: 180,
+  },
+  attachmentDocNameUser: {
+    color: colors.chatSurface,
   },
 
   attachBackdrop: {
