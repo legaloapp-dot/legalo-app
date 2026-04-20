@@ -117,6 +117,7 @@ export default function ClientChatScreen() {
   );
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
+  const pendingPickRef = useRef<'image' | 'document' | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
   const [clientNotifVisible, setClientNotifVisible] = useState(false);
   const [convListVisible, setConvListVisible] = useState(false);
@@ -214,41 +215,51 @@ export default function ClientChatScreen() {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [chat.messages]);
 
-  const handlePickImage = async () => {
-    setAttachMenuVisible(false);
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permisos', 'Necesitamos acceso a tu galería para adjuntar imágenes.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsMultipleSelection: false,
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      setAttachments((prev) => [
-        ...prev,
-        { uri: asset.uri, name: asset.fileName ?? 'imagen.jpg', type: 'image', mimeType: asset.mimeType ?? 'image/jpeg' },
-      ]);
+  const executePickAction = async () => {
+    const action = pendingPickRef.current;
+    pendingPickRef.current = null;
+    if (!action) return;
+
+    if (action === 'image') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permisos', 'Necesitamos acceso a tu galería para adjuntar imágenes.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: false,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setAttachments((prev) => [
+          ...prev,
+          { uri: asset.uri, name: asset.fileName ?? 'imagen.jpg', type: 'image', mimeType: asset.mimeType ?? 'image/jpeg' },
+        ]);
+      }
+    } else {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setAttachments((prev) => [
+          ...prev,
+          { uri: asset.uri, name: asset.name, type: 'document', mimeType: asset.mimeType ?? 'application/octet-stream' },
+        ]);
+      }
     }
   };
 
-  const handlePickDocument = async () => {
-    setAttachMenuVisible(false);
-    const result = await DocumentPicker.getDocumentAsync({
-      type: '*/*',
-      copyToCacheDirectory: true,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      setAttachments((prev) => [
-        ...prev,
-        { uri: asset.uri, name: asset.name, type: 'document', mimeType: asset.mimeType ?? 'application/octet-stream' },
-      ]);
+  // Android: onDismiss no existe, usamos effect cuando el modal ya cerró
+  useEffect(() => {
+    if (Platform.OS !== 'ios' && !attachMenuVisible && pendingPickRef.current) {
+      void executePickAction();
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachMenuVisible]);
 
   const handleSend = () => {
     const text = inputText.trim();
@@ -840,6 +851,7 @@ export default function ClientChatScreen() {
           animationType='slide'
           transparent
           onRequestClose={() => setAttachMenuVisible(false)}
+          onDismiss={() => void executePickAction()}
         >
           <Pressable
             style={[StyleSheet.absoluteFill, styles.attachBackdrop]}
@@ -848,14 +860,14 @@ export default function ClientChatScreen() {
           <View style={styles.attachSheet}>
             <TouchableOpacity
               style={styles.attachOption}
-              onPress={() => void handlePickImage()}
+              onPress={() => { pendingPickRef.current = 'image'; setAttachMenuVisible(false); }}
             >
               <Ionicons name='image-outline' size={22} color={colors.chatSecondary} />
               <Text style={styles.attachOptionText}>Imagen o foto</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.attachOption}
-              onPress={() => void handlePickDocument()}
+              onPress={() => { pendingPickRef.current = 'document'; setAttachMenuVisible(false); }}
             >
               <Ionicons name='document-outline' size={22} color={colors.chatSecondary} />
               <Text style={styles.attachOptionText}>Documento</Text>

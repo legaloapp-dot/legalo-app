@@ -11,7 +11,6 @@ import {
   toGeminiHistory,
   updateConversationTitle,
   uploadChatAttachment,
-  type ConversationAttachmentRow,
   type ConversationMessageRow,
   type ConversationRow,
 } from '../lib/chatConversations';
@@ -43,7 +42,10 @@ export interface ChatMessage {
 }
 
 function formatTime(date: Date): string {
-  return date.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString('es-VE', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function cleanCategoryFromText(text: string): string {
@@ -68,7 +70,9 @@ function rowToChatMessage(row: ConversationMessageRow): ChatMessage {
 export function useChat(clientId: string | undefined) {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | null
+  >(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -107,10 +111,14 @@ export function useChat(clientId: string | undefined) {
       if (attRows.length > 0) {
         const { data: signed } = await supabase.storage
           .from('chat-attachments')
-          .createSignedUrls(attRows.map((a) => a.storage_path), 3600);
+          .createSignedUrls(
+            attRows.map((a) => a.storage_path),
+            3600
+          );
         if (signed) {
           for (const item of signed) {
-            if (item.signedUrl && item.path) signedUrlMap[item.path] = item.signedUrl;
+            if (item.signedUrl && item.path)
+              signedUrlMap[item.path] = item.signedUrl;
           }
         }
       }
@@ -128,10 +136,12 @@ export function useChat(clientId: string | undefined) {
         });
       }
 
-      setMessages(rows.map((row) => ({
-        ...rowToChatMessage(row),
-        attachments: byMessage[row.id],
-      })));
+      setMessages(
+        rows.map((row) => ({
+          ...rowToChatMessage(row),
+          attachments: byMessage[row.id],
+        }))
+      );
     } catch {
       setMessages([]);
     } finally {
@@ -164,10 +174,13 @@ export function useChat(clientId: string | undefined) {
     })();
   }, [clientId, loadMessages]);
 
-  const switchConversation = useCallback(async (id: string) => {
-    setActiveConversationId(id);
-    await loadMessages(id);
-  }, [loadMessages]);
+  const switchConversation = useCallback(
+    async (id: string) => {
+      setActiveConversationId(id);
+      await loadMessages(id);
+    },
+    [loadMessages]
+  );
 
   const newConversation = useCallback(async () => {
     if (!clientId) return;
@@ -181,180 +194,237 @@ export function useChat(clientId: string | undefined) {
     }
   }, [clientId]);
 
-  const deleteConversation = useCallback(async (id: string) => {
-    try {
-      await dbDeleteConversation(id);
-      setConversations((prev) => {
-        const next = prev.filter((c) => c.id !== id);
-        // If we deleted the active one, switch to the next available or create one later
-        if (id === activeConversationId) {
-          if (next.length > 0) {
-            void switchConversation(next[0].id);
-          } else {
-            setActiveConversationId(null);
-            setMessages([]);
-          }
-        }
-        return next;
-      });
-    } catch {
-      // silently fail
-    }
-  }, [activeConversationId, switchConversation]);
-
-  const sendMessage = useCallback(async (text: string, attachmentsToUpload: UploadAttachment[] = []) => {
-    const hasText = text.trim().length > 0;
-    if (!clientId || (!hasText && attachmentsToUpload.length === 0)) return;
-
-    // If no active conversation, create one first
-    let convId = activeConversationId;
-    if (!convId) {
+  const deleteConversation = useCallback(
+    async (id: string) => {
       try {
-        const created = await createConversation(clientId);
-        setConversations((prev) => [created, ...prev]);
-        setActiveConversationId(created.id);
-        convId = created.id;
+        await dbDeleteConversation(id);
+        setConversations((prev) => {
+          const next = prev.filter((c) => c.id !== id);
+          // If we deleted the active one, switch to the next available or create one later
+          if (id === activeConversationId) {
+            if (next.length > 0) {
+              void switchConversation(next[0].id);
+            } else {
+              setActiveConversationId(null);
+              setMessages([]);
+            }
+          }
+          return next;
+        });
       } catch {
-        setSendError('No se pudo crear la conversacion');
+        // silently fail
+      }
+    },
+    [activeConversationId, switchConversation]
+  );
+
+  const sendMessage = useCallback(
+    async (text: string, attachmentsToUpload: UploadAttachment[] = []) => {
+      const hasText = text.trim().length > 0;
+      if (!clientId || (!hasText && attachmentsToUpload.length === 0)) return;
+
+      // If no active conversation, create one first
+      let convId = activeConversationId;
+      if (!convId) {
+        try {
+          const created = await createConversation(clientId);
+          setConversations((prev) => [created, ...prev]);
+          setActiveConversationId(created.id);
+          convId = created.id;
+        } catch {
+          setSendError('No se pudo crear la conversacion');
+          return;
+        }
+      }
+
+      setSendError(null);
+      setSending(true);
+
+      // Upload attachments to Storage (base64 returned for reuse with Gemini)
+      const uploadResults = await Promise.allSettled(
+        attachmentsToUpload.map(async (att) => {
+          const { storagePath, base64 } = await uploadChatAttachment(
+            clientId,
+            att.uri,
+            att.name,
+            att.mimeType
+          );
+          return { att, storagePath, base64 };
+        })
+      );
+      const successfulUploads = uploadResults
+        .filter(
+          (
+            r
+          ): r is PromiseFulfilledResult<{
+            att: UploadAttachment;
+            storagePath: string;
+            base64: string;
+          }> => r.status === 'fulfilled'
+        )
+        .map((r) => r.value);
+
+      // Build attachments array for Gemini (images + PDFs)
+      const geminiAttachments = successfulUploads
+        .filter(
+          (u) =>
+            u.att.mimeType.startsWith('image/') ||
+            u.att.mimeType === 'application/pdf'
+        )
+        .map((u) => ({ base64: u.base64, mimeType: u.att.mimeType }));
+
+      // Insert user message to DB
+      let userRow: ConversationMessageRow;
+      try {
+        userRow = await insertConversationMessage(convId, 'user', text.trim());
+      } catch {
+        setSendError('Error al guardar el mensaje');
+        setSending(false);
         return;
       }
-    }
 
-    setSendError(null);
-    setSending(true);
-
-    // Upload attachments to Storage
-    const uploadResults = await Promise.allSettled(
-      attachmentsToUpload.map(async (att) => {
-        const storagePath = await uploadChatAttachment(clientId, att.uri, att.name, att.mimeType);
-        return { att, storagePath };
-      })
-    );
-    const successfulUploads = uploadResults
-      .filter((r): r is PromiseFulfilledResult<{ att: UploadAttachment; storagePath: string }> => r.status === 'fulfilled')
-      .map((r) => r.value);
-
-    // Insert user message to DB
-    let userRow: ConversationMessageRow;
-    try {
-      userRow = await insertConversationMessage(convId, 'user', text.trim());
-    } catch {
-      setSendError('Error al guardar el mensaje');
-      setSending(false);
-      return;
-    }
-
-    // Save attachment records to DB + create signed URLs
-    const savedAttachments = await Promise.allSettled(
-      successfulUploads.map(async ({ att, storagePath }) => {
-        const saved = await saveConversationAttachment({
-          messageId: userRow.id,
-          conversationId: convId!,
-          userId: clientId,
-          storagePath,
-          fileName: att.name,
-          mimeType: att.mimeType,
-        });
-        const { data: signed } = await supabase.storage
-          .from('chat-attachments')
-          .createSignedUrl(storagePath, 3600);
-        const result: MessageAttachment = {
-          id: saved.id,
-          messageId: userRow.id,
-          storagePath,
-          fileName: att.name,
-          mimeType: att.mimeType,
-          signedUrl: signed?.signedUrl,
-        };
-        return result;
-      })
-    );
-    const finalAttachments: MessageAttachment[] = savedAttachments
-      .filter((r): r is PromiseFulfilledResult<MessageAttachment> => r.status === 'fulfilled')
-      .map((r) => r.value);
-
-    const userMsg: ChatMessage = {
-      ...rowToChatMessage(userRow),
-      attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
-    };
-    setMessages((prev) => [...prev, userMsg]);
-
-    // Check if this is the first user message (for auto-title)
-    const isFirstUserMessage = messages.filter((m) => m.type === 'user').length === 0;
-
-    // Build history from current messages (before the new user message)
-    const currentRows = messages.map((m): ConversationMessageRow => ({
-      id: m.id,
-      conversation_id: convId!,
-      role: m.type,
-      content: m.content,
-      category: m.caseType ?? null,
-      show_actions: m.showActions ?? false,
-      created_at: new Date().toISOString(),
-    }));
-    const history = toGeminiHistory(currentRows);
-
-    const aiMessageId = Date.now().toString();
-
-    try {
-      const aiInputText = text.trim() || '[Archivos adjuntos]';
-      const { data, error: fnError } = await supabase.functions.invoke('legal-chat', {
-        body: { message: aiInputText, history },
-      });
-
-      if (fnError) {
-        const errMsg =
-          typeof fnError === 'object' && fnError !== null && 'message' in fnError
-            ? (fnError as { message?: string }).message
-            : String(fnError);
-        throw new Error(data?.error || errMsg || 'Error al conectar con la función');
-      }
-      if (data?.error) throw new Error(data.error);
-
-      const responseText = data?.response || 'No pude procesar tu consulta. Intenta de nuevo.';
-      const category: string | null = data?.category || null;
-      const cleanedText = cleanCategoryFromText(responseText);
-
-      // Insert AI message to DB
-      const aiRow = await insertConversationMessage(
-        convId,
-        'ai',
-        cleanedText,
-        category,
-        !!category
+      // Save attachment records to DB + create signed URLs
+      const savedAttachments = await Promise.allSettled(
+        successfulUploads.map(async ({ att, storagePath }) => {
+          const saved = await saveConversationAttachment({
+            messageId: userRow.id,
+            conversationId: convId!,
+            userId: clientId,
+            storagePath,
+            fileName: att.name,
+            mimeType: att.mimeType,
+          });
+          const { data: signed } = await supabase.storage
+            .from('chat-attachments')
+            .createSignedUrl(storagePath, 3600);
+          const result: MessageAttachment = {
+            id: saved.id,
+            messageId: userRow.id,
+            storagePath,
+            fileName: att.name,
+            mimeType: att.mimeType,
+            signedUrl: signed?.signedUrl,
+          };
+          return result;
+        })
       );
+      const finalAttachments: MessageAttachment[] = savedAttachments
+        .filter(
+          (r): r is PromiseFulfilledResult<MessageAttachment> =>
+            r.status === 'fulfilled'
+        )
+        .map((r) => r.value);
 
-      setMessages((prev) => [...prev, rowToChatMessage(aiRow)]);
-
-      // Auto-title: use first 50 chars of the user's first message
-      if (isFirstUserMessage) {
-        const title = text.trim().slice(0, 50);
-        void updateConversationTitle(convId, title).then(() => {
-          setConversations((prev) =>
-            prev.map((c) => (c.id === convId ? { ...c, title, updated_at: new Date().toISOString() } : c))
-          );
-        });
-      } else {
-        // Keep conversations list updated_at fresh
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === convId ? { ...c, updated_at: new Date().toISOString() } : c
-          )
-        );
-      }
-    } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Error al conectar con LÉGALO AI');
-      const fallbackMsg: ChatMessage = {
-        id: aiMessageId,
-        type: 'ai',
-        content: 'Lo siento, hubo un error al procesar tu consulta. Verifica tu conexión e intenta de nuevo.',
-        time: formatTime(new Date()),
+      const userMsg: ChatMessage = {
+        ...rowToChatMessage(userRow),
+        attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
       };
-      setMessages((prev) => [...prev, fallbackMsg]);
-    } finally {
-      setSending(false);
-    }
-  }, [clientId, activeConversationId, messages]);
+      setMessages((prev) => [...prev, userMsg]);
+
+      // Check if this is the first user message (for auto-title)
+      const isFirstUserMessage =
+        messages.filter((m) => m.type === 'user').length === 0;
+
+      // Build history from current messages (before the new user message)
+      const currentRows = messages.map(
+        (m): ConversationMessageRow => ({
+          id: m.id,
+          conversation_id: convId!,
+          role: m.type,
+          content: m.content,
+          category: m.caseType ?? null,
+          show_actions: m.showActions ?? false,
+          created_at: new Date().toISOString(),
+        })
+      );
+      const history = toGeminiHistory(currentRows);
+
+      const aiMessageId = Date.now().toString();
+
+      try {
+        const aiInputText = text.trim() || '[Archivos adjuntos]';
+        const { data, error: fnError } = await supabase.functions.invoke(
+          'legal-chat',
+          {
+            body: {
+              message: aiInputText,
+              history,
+              ...(geminiAttachments.length > 0 && {
+                attachments: geminiAttachments,
+              }),
+            },
+          }
+        );
+
+        if (fnError) {
+          const errMsg =
+            typeof fnError === 'object' &&
+            fnError !== null &&
+            'message' in fnError
+              ? (fnError as { message?: string }).message
+              : String(fnError);
+          throw new Error(
+            data?.error || errMsg || 'Error al conectar con la función'
+          );
+        }
+        if (data?.error) throw new Error(data.error);
+
+        const responseText =
+          data?.response || 'No pude procesar tu consulta. Intenta de nuevo.';
+        const category: string | null = data?.category || null;
+        const cleanedText = cleanCategoryFromText(responseText);
+
+        // Insert AI message to DB
+        const aiRow = await insertConversationMessage(
+          convId,
+          'ai',
+          cleanedText,
+          category,
+          !!category
+        );
+
+        setMessages((prev) => [...prev, rowToChatMessage(aiRow)]);
+
+        // Auto-title: use first 50 chars of the user's first message
+        if (isFirstUserMessage) {
+          const title = text.trim().slice(0, 50);
+          void updateConversationTitle(convId, title).then(() => {
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === convId
+                  ? { ...c, title, updated_at: new Date().toISOString() }
+                  : c
+              )
+            );
+          });
+        } else {
+          // Keep conversations list updated_at fresh
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === convId
+                ? { ...c, updated_at: new Date().toISOString() }
+                : c
+            )
+          );
+        }
+      } catch (err) {
+        setSendError(
+          err instanceof Error ? err.message : 'Error al conectar con LÉGALO AI'
+        );
+        const fallbackMsg: ChatMessage = {
+          id: aiMessageId,
+          type: 'ai',
+          content:
+            'Lo siento, hubo un error al procesar tu consulta. Verifica tu conexión e intenta de nuevo.',
+          time: formatTime(new Date()),
+        };
+        setMessages((prev) => [...prev, fallbackMsg]);
+      } finally {
+        setSending(false);
+      }
+    },
+    [clientId, activeConversationId, messages]
+  );
 
   return {
     conversations,

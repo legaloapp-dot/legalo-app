@@ -113,7 +113,7 @@ export async function uploadChatAttachment(
   uri: string,
   fileName: string,
   mimeType: string
-): Promise<string> {
+): Promise<{ storagePath: string; base64: string }> {
   const path = `${userId}/${Date.now()}-${fileName}`;
   const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
   const buffer = base64ToArrayBuffer(base64);
@@ -121,7 +121,7 @@ export async function uploadChatAttachment(
     .from('chat-attachments')
     .upload(path, buffer, { contentType: mimeType, cacheControl: '3600' });
   if (error) throw error;
-  return path;
+  return { storagePath: path, base64 };
 }
 
 export async function saveConversationAttachment(params: {

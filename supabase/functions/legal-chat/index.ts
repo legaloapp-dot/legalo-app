@@ -17,17 +17,28 @@ Clasificación Silenciosa: Al final de cada diagnóstico, genera un bloque JSON 
 
 Tu Conocimiento: Constitución de la RBV, Código Civil, Código de Comercio, LOTTT y Ley de Arrendamientos.`;
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
+interface FileAttachment {
+  base64: string;
+  mimeType: string;
+}
 
 interface ChatRequest {
   message: string;
   history?: Array<{ role: 'user' | 'model'; parts: { text: string }[] }>;
+  // Legacy single-image format (backward compatible)
+  base64Image?: string;
+  imageMimeType?: string;
+  // New multi-file format
+  attachments?: FileAttachment[];
 }
 
 interface GeminiResponse {
   candidates?: Array<{
     content: {
-      parts: Array< { text: string } >;
+      parts: Array<{ text: string }>;
     };
   }>;
   error?: { message: string };
@@ -46,53 +57,96 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ error: 'Método no permitido' }),
-      { status: 405, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
-    );
+    return new Response(JSON.stringify({ error: 'Método no permitido' }), {
+      status: 405,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
   }
 
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) {
     console.error('GEMINI_API_KEY no configurada');
     return new Response(
-      JSON.stringify({ error: 'Servicio no configurado. Configura GEMINI_API_KEY en Supabase Secrets.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+      JSON.stringify({
+        error:
+          'Servicio no configurado. Configura GEMINI_API_KEY en Supabase Secrets.',
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      }
     );
   }
 
   try {
     let message: string;
-    let history: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-    
+    let history: Array<{
+      role: 'user' | 'model';
+      parts: Array<{ text: string }>;
+    }> = [];
+
+    let attachments: FileAttachment[] = [];
+
     try {
       const body = await req.json();
       message = body?.message ?? '';
       history = body?.history ?? [];
+
+      // Support new array format
+      if (Array.isArray(body?.attachments)) {
+        attachments = body.attachments;
+      }
+      // Backward compatibility: convert legacy single-image to array
+      else if (body?.base64Image && body?.imageMimeType) {
+        attachments = [
+          { base64: body.base64Image, mimeType: body.imageMimeType },
+        ];
+      }
     } catch {
-      return new Response(
-        JSON.stringify({ error: 'Cuerpo JSON inválido' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
-      );
+      return new Response(JSON.stringify({ error: 'Cuerpo JSON inválido' }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
     }
 
-    if (!message?.trim()) {
+    if (!message?.trim() && attachments.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Mensaje requerido' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+        JSON.stringify({ error: 'Mensaje o archivo requerido' }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
       );
     }
 
     // Limitar el historial para no exceder tokens (últimos 10 mensajes)
     const limitedHistory = history.slice(-10);
 
-    const contents = [
-      ...limitedHistory,
-      {
-        role: 'user',
-        parts: [{ text: message.trim() }],
-      },
-    ];
+    const userParts: Array<
+      { text: string } | { inlineData: { mimeType: string; data: string } }
+    > = [];
+    if (message.trim()) userParts.push({ text: message.trim() });
+
+    // Add all attachments as inlineData parts
+    for (const att of attachments) {
+      userParts.push({
+        inlineData: { mimeType: att.mimeType, data: att.base64 },
+      });
+    }
+
+    const contents = [...limitedHistory, { role: 'user', parts: userParts }];
 
     const body = {
       systemInstruction: {
@@ -141,7 +195,13 @@ Deno.serve(async (req) => {
     console.error('Error:', err);
     return new Response(
       JSON.stringify({ error: 'Error interno del servidor' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      }
     );
   }
 });
@@ -155,11 +215,22 @@ function cleanResponseText(text: string): string {
 }
 
 function extractCategory(text: string): string | null {
-  const categories = ['Laboral', 'Civil', 'Penal', 'Mercantil', 'Administrativo', 'Familia', 'Inmobiliario', 'Inquilinato'];
+  const categories = [
+    'Laboral',
+    'Civil',
+    'Penal',
+    'Mercantil',
+    'Administrativo',
+    'Familia',
+    'Inmobiliario',
+    'Inquilinato',
+  ];
   // Buscar patrón CATEGORIA: [X] o CATEGORIA: X
   const categoriaMatch = text.match(/CATEGORIA:\s*\[?([^\]\s]+)\]?/i);
   if (categoriaMatch) {
-    const found = categories.find((c) => c.toLowerCase() === categoriaMatch[1].toLowerCase());
+    const found = categories.find(
+      (c) => c.toLowerCase() === categoriaMatch[1].toLowerCase()
+    );
     if (found) return found;
   }
   // Fallback: buscar por palabra clave en el texto
