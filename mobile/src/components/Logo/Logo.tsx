@@ -1,5 +1,6 @@
 import React from 'react';
-import { Image, StyleSheet, ViewStyle } from 'react-native';
+import { Image, ViewStyle } from 'react-native';
+import { styles } from './styles';
 
 interface LogoProps {
   size?: 'small' | 'medium' | 'large';
@@ -16,13 +17,9 @@ export default function Logo({ size = 'medium', style }: LogoProps) {
   const dimensions = SIZES[size];
   return (
     <Image
-      source={require('../../assets/logo.png')}
+      source={require('../../../assets/logo.png')}
       style={[styles.logo, dimensions, style]}
       resizeMode="contain"
     />
   );
 }
-
-const styles = StyleSheet.create({
-  logo: {},
-});

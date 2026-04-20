@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   FlatList,
@@ -13,57 +12,10 @@ import {
   type ViewStyle,
   type TextStyle,
 } from 'react-native';
-import { searchPlacesAutocomplete, type PlaceSuggestion } from '../lib/placesAutocomplete';
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(t);
-  }, [value, delayMs]);
-  return debounced;
-}
-
-type Variant = 'lawyer' | 'directory';
-
-const VARIANT_STYLES: Record<
-  Variant,
-  {
-    input: TextStyle;
-    placeholder: string;
-    suggestionText: TextStyle;
-    rowBorder: string;
-    dropdownBg: string;
-    loading: string;
-  }
-> = {
-  lawyer: {
-    input: {
-      flex: 1,
-      fontSize: 16,
-      color: '#191c1e',
-      padding: 0,
-    },
-    placeholder: '#757682',
-    suggestionText: { fontSize: 14, color: '#191c1e', fontWeight: '600' },
-    rowBorder: '#c5c6d255',
-    dropdownBg: '#ffffff',
-    loading: '#001237',
-  },
-  directory: {
-    input: {
-      flex: 1,
-      fontSize: 15,
-      color: '#000209',
-      padding: 0,
-    },
-    placeholder: '#75768299',
-    suggestionText: { fontSize: 14, color: '#000209', fontWeight: '600' },
-    rowBorder: '#C4C6CF44',
-    dropdownBg: '#FFFFFF',
-    loading: '#005CAB',
-  },
-};
+import { searchPlacesAutocomplete, type PlaceSuggestion } from '../../lib/placesAutocomplete';
+import { useDebouncedValue } from './hooks/useDebouncedValue';
+import { VARIANT_STYLES, type Variant } from './types';
+import { styles } from './styles';
 
 export default function LocationAutocompleteInput({
   value,
@@ -152,7 +104,6 @@ export default function LocationAutocompleteInput({
 
   const showDropdown = listOpen && suggestions.length > 0;
   const ph = placeholder ?? 'Escribe dirección o ciudad…';
-
   const listData = useMemo(() => suggestions, [suggestions]);
 
   return (
@@ -205,35 +156,3 @@ export default function LocationAutocompleteInput({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: {
-    position: 'relative',
-    zIndex: 20,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  spinner: { marginRight: 4 },
-  dropdown: {
-    marginTop: 6,
-    borderRadius: 10,
-    borderWidth: 1,
-    maxHeight: 220,
-    overflow: 'hidden',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-  },
-  flatMax: { maxHeight: 220 },
-  suggestionRow: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-});

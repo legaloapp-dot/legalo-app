@@ -39,7 +39,7 @@ import LawyerNotificationsModal from '../components/LawyerNotificationsModal';
 import LawyerNotificationBell from '../components/LawyerNotificationBell';
 import { useLawyerNotifications } from '../hooks/useLawyerNotifications';
 import { registerAndSaveLawyerPushToken } from '../lib/pushNotifications';
-import BannerVencimiento from '../components/BannerVencimiento';
+import ExpirationBanner from '../components/ExpirationBanner';
 import LawyerRatingsModal from '../components/LawyerRatingsModal';
 
 const WHATSAPP = '#25D366';
@@ -157,7 +157,7 @@ export default function LawyerDashboardScreen() {
   }, [notifications]);
 
   const trialBannerEl = (
-    <BannerVencimiento plan={profile?.plan} subscriptionExpiresAt={profile?.subscription_expires_at} />
+    <ExpirationBanner plan={profile?.plan} subscriptionExpiresAt={profile?.subscription_expires_at} />
   );
 
   const notificationsModalEl = (

@@ -1,0 +1,102 @@
+import { StyleSheet } from 'react-native';
+import { colors } from '../../theme/colors';
+
+export const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.chatContainer },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.chatOutlineVariant + '44',
+  },
+  headerBtn: { width: 72, alignItems: 'flex-start' },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.chatPrimary,
+  },
+  markAllBtn: { width: 72, alignItems: 'flex-end' },
+  markAllText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.chatSecondary,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.chatPrimary,
+  },
+  emptySub: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontSize: 14,
+    color: colors.chatOutline,
+    lineHeight: 22,
+  },
+  list: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: colors.chatSurface,
+    borderWidth: 1,
+    borderColor: colors.chatOutlineVariant + '44',
+  },
+  rowUnread: {
+    backgroundColor: colors.chatPrimaryContainer,
+    borderColor: colors.chatSecondary + '33',
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.chatContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconWrapUnread: {
+    backgroundColor: colors.chatPrimaryContainer,
+  },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.chatOnSurface,
+  },
+  rowTitleBold: { fontWeight: '800' },
+  rowBodyText: {
+    marginTop: 4,
+    fontSize: 13,
+    color: colors.chatOutline,
+    lineHeight: 18,
+  },
+  rowTime: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.chatOutline,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.chatSecondary,
+    marginTop: 6,
+  },
+});

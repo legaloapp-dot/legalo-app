@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { colors } from '../../theme/colors';
+import { styles } from './styles';
 
 export default function LawyerNotificationBell({
   unreadCount,
@@ -25,24 +26,3 @@ export default function LawyerNotificationBell({
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  iconPad: { padding: 6 },
-  notifBadge: {
-    position: 'absolute',
-    right: -6,
-    top: -4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.error,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  notifBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: colors.onPrimary,
-  },
-});

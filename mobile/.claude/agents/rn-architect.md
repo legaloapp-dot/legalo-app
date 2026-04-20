@@ -29,7 +29,7 @@ mobile/src/
 │   ├── client/           ⚠️  Tabs mezclados con lógica de negocio
 │   ├── lawyer/           ⚠️  Mismo problema
 │   └── lawyer-onboarding/ ✅ Mejor dividido (multi-step flow)
-├── components/           ⚠️  Sin atomic design, solo widgets específicos
+├── components/           ✅ Subcarpeta por componente (index.ts + ComponentName.tsx + styles.ts [+ types.ts] [+ hooks/])
 ├── hooks/                ✅ useChat, useLawyerDashboardData, useNotifications
 ├── lib/                  ✅ Queries Supabase separadas de React
 ├── config/               ✅ mobilePayment.ts
@@ -41,6 +41,9 @@ mobile/src/
 - `App.tsx` usa rendering condicional en lugar de React Navigation (instalado pero sin usar)
 - No existe `navigation/` — el árbol de rutas vive inline en `App.tsx`
 - No existen átomos UI (Button, Input, Text, Card) — todo duplicado inline en cada pantalla
+
+**Deudas resueltas**:
+- ✅ `components/` refactorizado: cada componente tiene su propia subcarpeta
 
 ### Estructura TARGET (hacia donde guiás SIEMPRE)
 
@@ -67,7 +70,13 @@ mobile/src/
 │   ├── ui/                     # ← NUEVA: Atomic Design
 │   │   ├── atoms/              # Button, Input, Text, Avatar, Badge, Divider
 │   │   └── molecules/          # FormField, NotificationItem, LawyerCard, CaseRow
-│   └── (widgets de dominio: NotificationsModal, BannerVencimiento, etc.)
+│   └── ComponentName/          # ← Subcarpeta por componente de dominio
+│       ├── index.ts            #   re-export: export { default } from './ComponentName'
+│       ├── ComponentName.tsx   #   JSX puro, sin StyleSheet inline
+│       ├── styles.ts           #   StyleSheet.create({ ... }) exportado como `styles`
+│       ├── types.ts            #   (opcional) interfaces/types propios del componente
+│       └── hooks/              #   (opcional) hooks con lógica compleja
+│           └── useComponentName.ts
 ├── hooks/
 │   ├── useChat.ts              # lógica + tipos inline si son exclusivos del hook
 │   ├── useChat.types.ts        # ← archivo separado si los tipos se reusan fuera
@@ -298,6 +307,7 @@ Con ejemplos reales del codebase:
 | Constante exportada desde un Screen | `LAWYER_SPECIALTY_OPTIONS` en `LawyerOnboardingStep1Screen.tsx` | Mover a `config/specialties.ts` |
 | Tipos duplicados entre screens | `Lawyer` / `DirectoryLawyer` definidos en `ClientChatScreen` y `LawyerDirectoryTab` | Unificar en `types/lawyers.ts` |
 | Tipos globales en un archivo plano | Todo en un solo `types/profile.ts` | Separar por dominio: `cases.ts`, `transactions.ts`, `notifications.ts` |
+| Componente sin subcarpeta | `components/Logo.tsx` suelto en raíz | `components/Logo/Logo.tsx` + `styles.ts` + `index.ts` |
 
 ---
 

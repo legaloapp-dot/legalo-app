@@ -1,9 +1,8 @@
 import React, { Fragment } from 'react';
-import { StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
+import { Text, View, type StyleProp, type TextStyle } from 'react-native';
+import { styles } from './styles';
+import type { Segment, Block, Props } from './types';
 
-type Segment = { text: string; bold: boolean };
-
-/** Parte `**negrita**` en segmentos (contenido puede ser multilínea). */
 function parseBoldSegments(text: string): Segment[] {
   const segments: Segment[] = [];
   const re = /\*\*([\s\S]+?)\*\*/g;
@@ -24,10 +23,6 @@ function parseBoldSegments(text: string): Segment[] {
   }
   return segments;
 }
-
-type Block =
-  | { kind: 'paragraph'; text: string }
-  | { kind: 'list'; items: string[] };
 
 /** Líneas `* ítem` o `- ítem` (Markdown) → bloques de lista; el resto son párrafos. */
 function splitIntoBlocks(raw: string): Block[] {
@@ -50,7 +45,6 @@ function splitIntoBlocks(raw: string): Block[] {
     }
   };
 
-  /** `* texto` / `- texto` (asterisco o guión + espacio + contenido). */
   const listLine = /^\s*[\*\-]\s+(.+)$/;
 
   for (const line of lines) {
@@ -95,12 +89,6 @@ function BoldInline({
   );
 }
 
-type Props = {
-  children: string;
-  baseStyle?: StyleProp<TextStyle>;
-  boldStyle?: StyleProp<TextStyle>;
-};
-
 /**
  * Markdown mínimo en burbujas: `**negrita**` y listas con `*` o `-` al inicio de línea.
  */
@@ -132,25 +120,3 @@ export default function ChatMarkdownText({ children, baseStyle, boldStyle }: Pro
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: {
-    alignSelf: 'stretch',
-    gap: 6,
-  },
-  list: {
-    gap: 6,
-  },
-  listRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  bullet: {
-    marginRight: 2,
-    lineHeight: 22,
-  },
-  listItemBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-});
