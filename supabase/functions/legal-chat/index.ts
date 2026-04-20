@@ -98,9 +98,16 @@ Deno.serve(async (req) => {
       message = body?.message ?? '';
       history = body?.history ?? [];
 
-      // Support new array format
+      // Support new array format (filter invalid entries)
       if (Array.isArray(body?.attachments)) {
-        attachments = body.attachments;
+        attachments = body.attachments.filter(
+          (a: unknown): a is FileAttachment =>
+            typeof a === 'object' &&
+            a !== null &&
+            typeof (a as FileAttachment).base64 === 'string' &&
+            typeof (a as FileAttachment).mimeType === 'string' &&
+            (a as FileAttachment).base64.length > 0
+        );
       }
       // Backward compatibility: convert legacy single-image to array
       else if (body?.base64Image && body?.imageMimeType) {
@@ -171,7 +178,13 @@ Deno.serve(async (req) => {
       console.error('Gemini API error:', data);
       return new Response(
         JSON.stringify({ error: data.error?.message || 'Error en la API' }),
-        { status: res.status, headers: { 'Content-Type': 'application/json' } }
+        {
+          status: res.status,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
       );
     }
 

@@ -40,7 +40,11 @@ import { useClientNotifications } from '../hooks/useClientNotifications';
 import ClientNotificationsModal from '../components/ClientNotificationsModal';
 import ClientNotificationBell from '../components/ClientNotificationBell';
 import { registerAndSaveClientPushToken } from '../lib/pushNotifications';
-import { useChat, type ChatMessage, type UploadAttachment } from '../hooks/useChat';
+import {
+  useChat,
+  type ChatMessage,
+  type UploadAttachment,
+} from '../hooks/useChat';
 import ConversationListModal from '../components/ConversationListModal';
 import ChatMarkdownText from '../components/ChatMarkdownText';
 
@@ -118,6 +122,7 @@ export default function ClientChatScreen() {
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
   const pendingPickRef = useRef<'image' | 'document' | null>(null);
+  const isPickingRef = useRef(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [clientNotifVisible, setClientNotifVisible] = useState(false);
   const [convListVisible, setConvListVisible] = useState(false);
@@ -216,14 +221,22 @@ export default function ClientChatScreen() {
   }, [chat.messages]);
 
   const executePickAction = async () => {
+    // Prevent concurrent picker executions (race condition fix)
+    if (isPickingRef.current) return;
     const action = pendingPickRef.current;
     pendingPickRef.current = null;
     if (!action) return;
+    isPickingRef.current = true;
 
     if (action === 'image') {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permisos', 'Necesitamos acceso a tu galería para adjuntar imágenes.');
+        Alert.alert(
+          'Permisos',
+          'Necesitamos acceso a tu galería para adjuntar imágenes.'
+        );
+        isPickingRef.current = false;
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -235,7 +248,12 @@ export default function ClientChatScreen() {
         const asset = result.assets[0];
         setAttachments((prev) => [
           ...prev,
-          { uri: asset.uri, name: asset.fileName ?? 'imagen.jpg', type: 'image', mimeType: asset.mimeType ?? 'image/jpeg' },
+          {
+            uri: asset.uri,
+            name: asset.fileName ?? 'imagen.jpg',
+            type: 'image',
+            mimeType: asset.mimeType ?? 'image/jpeg',
+          },
         ]);
       }
     } else {
@@ -247,10 +265,16 @@ export default function ClientChatScreen() {
         const asset = result.assets[0];
         setAttachments((prev) => [
           ...prev,
-          { uri: asset.uri, name: asset.name, type: 'document', mimeType: asset.mimeType ?? 'application/octet-stream' },
+          {
+            uri: asset.uri,
+            name: asset.name,
+            type: 'document',
+            mimeType: asset.mimeType ?? 'application/octet-stream',
+          },
         ]);
       }
     }
+    isPickingRef.current = false;
   };
 
   // Android: onDismiss no existe, usamos effect cuando el modal ya cerró
@@ -258,7 +282,7 @@ export default function ClientChatScreen() {
     if (Platform.OS !== 'ios' && !attachMenuVisible && pendingPickRef.current) {
       void executePickAction();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachMenuVisible]);
 
   const handleSend = () => {
@@ -346,8 +370,19 @@ export default function ClientChatScreen() {
                     />
                   ) : (
                     <View key={att.id} style={styles.attachmentDocChip}>
-                      <Ionicons name='document' size={14} color={isUser ? colors.chatSurface : colors.chatSecondary} />
-                      <Text style={[styles.attachmentDocName, isUser && styles.attachmentDocNameUser]}>
+                      <Ionicons
+                        name='document'
+                        size={14}
+                        color={
+                          isUser ? colors.chatSurface : colors.chatSecondary
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.attachmentDocName,
+                          isUser && styles.attachmentDocNameUser,
+                        ]}
+                      >
                         {att.fileName}
                       </Text>
                     </View>
@@ -795,7 +830,11 @@ export default function ClientChatScreen() {
                   {attachments.map((att, i) => (
                     <View key={i} style={styles.attachmentChip}>
                       <Ionicons
-                        name={att.type === 'image' ? 'image-outline' : 'document-outline'}
+                        name={
+                          att.type === 'image'
+                            ? 'image-outline'
+                            : 'document-outline'
+                        }
                         size={14}
                         color={colors.chatSecondary}
                       />
@@ -804,11 +843,17 @@ export default function ClientChatScreen() {
                       </Text>
                       <TouchableOpacity
                         onPress={() =>
-                          setAttachments((prev) => prev.filter((_, j) => j !== i))
+                          setAttachments((prev) =>
+                            prev.filter((_, j) => j !== i)
+                          )
                         }
                         hitSlop={6}
                       >
-                        <Ionicons name='close-circle' size={16} color={colors.chatOutline} />
+                        <Ionicons
+                          name='close-circle'
+                          size={16}
+                          color={colors.chatOutline}
+                        />
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -828,7 +873,11 @@ export default function ClientChatScreen() {
                   style={styles.attachButton}
                   onPress={() => setAttachMenuVisible(true)}
                 >
-                  <Ionicons name='attach' size={22} color={colors.chatOutline} />
+                  <Ionicons
+                    name='attach'
+                    size={22}
+                    color={colors.chatOutline}
+                  />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -860,16 +909,30 @@ export default function ClientChatScreen() {
           <View style={styles.attachSheet}>
             <TouchableOpacity
               style={styles.attachOption}
-              onPress={() => { pendingPickRef.current = 'image'; setAttachMenuVisible(false); }}
+              onPress={() => {
+                pendingPickRef.current = 'image';
+                setAttachMenuVisible(false);
+              }}
             >
-              <Ionicons name='image-outline' size={22} color={colors.chatSecondary} />
+              <Ionicons
+                name='image-outline'
+                size={22}
+                color={colors.chatSecondary}
+              />
               <Text style={styles.attachOptionText}>Imagen o foto</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.attachOption}
-              onPress={() => { pendingPickRef.current = 'document'; setAttachMenuVisible(false); }}
+              onPress={() => {
+                pendingPickRef.current = 'document';
+                setAttachMenuVisible(false);
+              }}
             >
-              <Ionicons name='document-outline' size={22} color={colors.chatSecondary} />
+              <Ionicons
+                name='document-outline'
+                size={22}
+                color={colors.chatSecondary}
+              />
               <Text style={styles.attachOptionText}>Documento</Text>
             </TouchableOpacity>
             <TouchableOpacity

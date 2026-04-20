@@ -67,6 +67,14 @@ function rowToChatMessage(row: ConversationMessageRow): ChatMessage {
   };
 }
 
+// 5MB limit for attachments sent to Gemini (base64 encoded)
+const MAX_ATTACHMENTS_SIZE_BYTES = 5 * 1024 * 1024;
+
+function estimateBase64Size(base64: string): number {
+  // base64 string length * 0.75 ≈ original bytes (roughly)
+  return Math.ceil(base64.length * 0.75);
+}
+
 export function useChat(clientId: string | undefined) {
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
@@ -80,6 +88,8 @@ export function useChat(clientId: string | undefined) {
 
   // Track whether we've done the initial load for the current clientId
   const initializedRef = useRef<string | null>(null);
+  // Track if title has been generated for current conversation (prevents stale closure issues)
+  const titleGeneratedForConvRef = useRef<string | null>(null);
 
   const refreshConversations = useCallback(async () => {
     if (!clientId) {
@@ -264,6 +274,13 @@ export function useChat(clientId: string | undefined) {
         )
         .map((r) => r.value);
 
+      // Check if all uploads failed when user only sent attachments
+      if (attachmentsToUpload.length > 0 && successfulUploads.length === 0) {
+        setSendError('No se pudieron subir los archivos. Intenta de nuevo.');
+        setSending(false);
+        return;
+      }
+
       // Build attachments array for Gemini (images + PDFs)
       const geminiAttachments = successfulUploads
         .filter(
@@ -272,6 +289,21 @@ export function useChat(clientId: string | undefined) {
             u.att.mimeType === 'application/pdf'
         )
         .map((u) => ({ base64: u.base64, mimeType: u.att.mimeType }));
+
+      // Check total size of attachments for Gemini
+      const totalSize = geminiAttachments.reduce(
+        (sum, att) => sum + estimateBase64Size(att.base64),
+        0
+      );
+      if (totalSize > MAX_ATTACHMENTS_SIZE_BYTES) {
+        setSendError(
+          `Los archivos son muy grandes (${Math.round(
+            totalSize / 1024 / 1024
+          )}MB). Máximo permitido: 5MB.`
+        );
+        setSending(false);
+        return;
+      }
 
       // Insert user message to DB
       let userRow: ConversationMessageRow;
@@ -321,9 +353,9 @@ export function useChat(clientId: string | undefined) {
       };
       setMessages((prev) => [...prev, userMsg]);
 
-      // Check if this is the first user message (for auto-title)
-      const isFirstUserMessage =
-        messages.filter((m) => m.type === 'user').length === 0;
+      // Check if title needs to be generated (use ref to avoid stale closure)
+      const shouldGenerateTitle =
+        titleGeneratedForConvRef.current !== convId && text.trim().length > 0;
 
       // Build history from current messages (before the new user message)
       const currentRows = messages.map(
@@ -386,7 +418,8 @@ export function useChat(clientId: string | undefined) {
         setMessages((prev) => [...prev, rowToChatMessage(aiRow)]);
 
         // Auto-title: use first 50 chars of the user's first message
-        if (isFirstUserMessage) {
+        if (shouldGenerateTitle) {
+          titleGeneratedForConvRef.current = convId;
           const title = text.trim().slice(0, 50);
           void updateConversationTitle(convId, title).then(() => {
             setConversations((prev) =>
