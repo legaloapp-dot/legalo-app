@@ -16,23 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import Logo from '../../components/Logo';
 import { supabase } from '../../lib/supabase';
 import { colors } from '../../theme/colors';
+import { LAWYER_SPECIALTY_OPTIONS } from '../../config/specialties';
+import type { SpecialtyId } from '../../types/lawyers';
+
+export type { SpecialtyId };
+export { LAWYER_SPECIALTY_OPTIONS };
 
 const BIO_MAX = 300;
-
-export type SpecialtyId = 'Laboral' | 'Penal' | 'Civil' | 'Mercantil' | 'Público' | 'Otro';
-
-export const LAWYER_SPECIALTY_OPTIONS: {
-  id: SpecialtyId;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}[] = [
-  { id: 'Laboral', label: 'Laboral', icon: 'briefcase-outline' },
-  { id: 'Penal', label: 'Penal', icon: 'hammer-outline' },
-  { id: 'Civil', label: 'Civil', icon: 'people-outline' },
-  { id: 'Mercantil', label: 'Mercantil', icon: 'business-outline' },
-  { id: 'Público', label: 'Público', icon: 'library-outline' },
-  { id: 'Otro', label: 'Otro', icon: 'add' },
-];
 
 /** Alias para compatibilidad interna del paso 1 */
 const SPECIALTIES = LAWYER_SPECIALTY_OPTIONS;

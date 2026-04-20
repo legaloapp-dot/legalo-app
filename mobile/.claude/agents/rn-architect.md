@@ -54,18 +54,35 @@ mobile/src/
 │   └── types.ts                # RootParamList tipados para type-safe navigation
 ├── screens/
 │   ├── auth/                   # LoginScreen, RegisterScreen
-│   ├── client/                 # ClientChatScreen, ClientCasesScreen, etc.
-│   ├── lawyer/                 # LawyerDashboard, LawyerCases, etc.
-│   └── lawyer-onboarding/      # Multi-step flow (ya bien dividido)
+│   ├── client/
+│   │   ├── chat/
+│   │   │   ├── ClientChatScreen.tsx
+│   │   │   ├── ClientChatContainer.tsx
+│   │   │   ├── ClientChatView.tsx
+│   │   │   └── types.ts        # ← tipos locales del feature (ej: TabType, MessageUI)
+│   │   └── ...                 # otros features del cliente
+│   └── lawyer/
+│       └── ...                 # features del abogado, cada uno con su types.ts
 ├── components/
 │   ├── ui/                     # ← NUEVA: Atomic Design
 │   │   ├── atoms/              # Button, Input, Text, Avatar, Badge, Divider
 │   │   └── molecules/          # FormField, NotificationItem, LawyerCard, CaseRow
 │   └── (widgets de dominio: NotificationsModal, BannerVencimiento, etc.)
-├── hooks/                      # Custom hooks (estado + efectos, llaman a lib/)
+├── hooks/
+│   ├── useChat.ts              # lógica + tipos inline si son exclusivos del hook
+│   ├── useChat.types.ts        # ← archivo separado si los tipos se reusan fuera
+│   └── ...
 ├── lib/                        # Queries Supabase puras (sin React)
-├── services/                   # ← NUEVA: lógica de negocio cross-cutting
-├── types/                      # TypeScript interfaces y enums
+├── services/
+│   ├── caseService.ts
+│   ├── caseService.types.ts    # ← tipos propios del servicio
+│   └── ...
+├── types/                      # ← Tipos GLOBALES compartidos entre módulos
+│   ├── profile.ts              # (ya existe) UserRole, Profile
+│   ├── cases.ts                # Case, CaseStatus, CaseRow
+│   ├── transactions.ts         # Transaction, PaymentPurpose
+│   ├── notifications.ts        # NotificationItem (shared entre client y lawyer)
+│   └── index.ts                # re-export de todos los tipos globales
 ├── config/                     # Constantes de configuración
 └── theme/                      # Design system: colors, spacing, typography
 ```
@@ -189,6 +206,84 @@ Si un componente llama a Supabase → no es un atom ni una molecule, es un Conta
 
 ---
 
+## Estrategia de tipos: global vs co-localizado
+
+La regla es simple: **un tipo vive donde lo necesita PRIMERO. Si lo necesita alguien más, sube un nivel.**
+
+### Jerarquía de ubicación
+
+```
+1. Inline en el mismo archivo        → tipo usado solo ahí (ej: estado local de un hook)
+2. feature/types.ts                  → tipo usado dentro del mismo feature/carpeta
+3. hooks/useX.types.ts               → tipo de hook que otros hooks o containers reusan
+4. services/xService.types.ts        → tipo de servicio que otros servicios o hooks reusan
+5. types/ (global)                   → tipo compartido entre 2+ módulos distintos
+```
+
+### Qué va en `types/` (global)
+
+Solo tipos que cruzan fronteras de módulo. Si dos features diferentes lo importan, va acá:
+
+```typescript
+// types/cases.ts
+export type CaseStatus = 'awaiting_payment' | 'active' | 'closed'
+export interface Case { id: string; status: CaseStatus; clientId: string; lawyerId: string; ... }
+
+// types/notifications.ts
+export interface NotificationItem { id: string; title: string; read: boolean; createdAt: string }
+
+// types/transactions.ts
+export type PaymentPurpose = 'case_contact' | 'lawyer_subscription'
+export interface Transaction { id: string; amount: number; purpose: PaymentPurpose; ... }
+
+// types/index.ts  →  re-exporta todo para imports limpios
+export * from './cases'
+export * from './notifications'
+export * from './transactions'
+export * from './profile'
+```
+
+### Qué va co-localizado en `feature/types.ts`
+
+Tipos de UI o estado específicos del feature. Nadie externo debería importarlos:
+
+```typescript
+// screens/client/chat/types.ts
+export type ChatTab = 'chat' | 'directorio' | 'casos' | 'pagos' | 'perfil'
+export interface MessageUI { id: string; text: string; isUser: boolean; timestamp: Date }
+
+// screens/lawyer/onboarding/types.ts
+export type OnboardingStep = 1 | 2 | 3 | 'pending'
+```
+
+### Qué va en `hooks/useX.types.ts`
+
+Solo cuando el tipo del hook lo reusan un Container Y otro hook. Si solo lo usa el Container que llama al hook, puede vivir inline:
+
+```typescript
+// hooks/useChat.types.ts  (exportado porque ClientChatContainer Y ConversationList lo usan)
+export interface ChatConversation { id: string; title: string; lastMessage: string; unreadCount: number }
+```
+
+### Qué va en `services/xService.types.ts`
+
+Tipos del dominio de negocio propios de ese servicio. Si otro servicio los necesita, suben a `types/` global:
+
+```typescript
+// services/caseService.types.ts
+export interface CreateCasePayload { lawyerId: string; description: string; categoryId: string }
+export interface CaseActionResult { success: boolean; caseId?: string; error?: string }
+```
+
+### Reglas que aplicás siempre
+
+- `types/` global NUNCA importa desde `screens/`, `hooks/` ni `services/` — flujo unidireccional hacia abajo
+- Si un tipo está en `types/` y solo lo usa UN módulo → moverlo al módulo (no gold-plate)
+- Tipos de Supabase DB (filas crudas) se definen en `lib/` o `types/` — nunca en screens
+- `types/index.ts` hace re-export de todos los globales para imports limpios: `import { Case } from '@/types'`
+
+---
+
 ## Anti-patrones que rechazás en ESTE proyecto
 
 Con ejemplos reales del codebase:
@@ -200,6 +295,9 @@ Con ejemplos reales del codebase:
 | Estilos duplicados | `StyleSheet.create()` en cada pantalla con los mismos base styles | Tokens en `theme/` + atoms con estilos encapsulados |
 | Lógica de negocio en JSX | Queries inline en componentes de UI | Mover a `hooks/` → `lib/` |
 | Tabs como archivos raíz | `ClientCasesTab.tsx` en la raíz de `screens/client/` | Cada tab es una screen con su propio hook |
+| Constante exportada desde un Screen | `LAWYER_SPECIALTY_OPTIONS` en `LawyerOnboardingStep1Screen.tsx` | Mover a `config/specialties.ts` |
+| Tipos duplicados entre screens | `Lawyer` / `DirectoryLawyer` definidos en `ClientChatScreen` y `LawyerDirectoryTab` | Unificar en `types/lawyers.ts` |
+| Tipos globales en un archivo plano | Todo en un solo `types/profile.ts` | Separar por dominio: `cases.ts`, `transactions.ts`, `notifications.ts` |
 
 ---
 

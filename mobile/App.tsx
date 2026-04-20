@@ -1,25 +1,15 @@
 import './src/lib/pushNotifications.expo';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, ActivityIndicator } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
-import LoginScreen from './src/screens/LoginScreen';
-import RegisterScreen from './src/screens/RegisterScreen';
-import ClientChatScreen from './src/screens/ClientChatScreen';
-import LawyerOnboardingFlow from './src/screens/lawyer-onboarding/LawyerOnboardingFlow';
-import LawyerPendingVerificationScreen from './src/screens/lawyer-onboarding/LawyerPendingVerificationScreen';
-import LawyerDashboardScreen from './src/screens/LawyerDashboardScreen';
-import {
-  lawyerNeedsOnboarding,
-  lawyerPendingVerification,
-} from './src/types/profile';
+import AppNavigator from './src/navigation/AppNavigator';
 
 function AppContent() {
-  const { session, loading, profile, profileLoading } = useAuth();
-  const [screen, setScreen] = useState<'login' | 'register'>('login');
-
+  const { session, loading, profileLoading } = useAuth();
   const appReady = !loading && !(session != null && profileLoading);
 
   useEffect(() => {
@@ -28,31 +18,19 @@ function AppContent() {
     }
   }, [appReady]);
 
-  if (loading || (session != null && profileLoading)) {
+  if (!appReady) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size='large' color='#001D3D' />
+        <ActivityIndicator size="large" color="#001D3D" />
       </View>
     );
   }
 
-  if (session) {
-    if (profile && lawyerPendingVerification(profile)) {
-      return <LawyerPendingVerificationScreen />;
-    }
-    if (profile && lawyerNeedsOnboarding(profile)) {
-      return <LawyerOnboardingFlow />;
-    }
-    if (profile?.role === 'lawyer' && profile.is_verified) {
-      return <LawyerDashboardScreen />;
-    }
-    return <ClientChatScreen />;
-  }
-
-  return screen === 'login' ? (
-    <LoginScreen onNavigateToRegister={() => setScreen('register')} />
-  ) : (
-    <RegisterScreen onNavigateToLogin={() => setScreen('login')} />
+  return (
+    <NavigationContainer>
+      <StatusBar style="dark" />
+      <AppNavigator />
+    </NavigationContainer>
   );
 }
 
@@ -60,7 +38,6 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <StatusBar style='dark' />
         <AppContent />
       </AuthProvider>
     </SafeAreaProvider>

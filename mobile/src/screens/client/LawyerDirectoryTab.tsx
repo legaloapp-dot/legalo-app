@@ -25,26 +25,15 @@ import { hasPendingTransaction } from '../../lib/clientPayments';
 import { haversineKm, formatDistanceKm } from '../../lib/geo';
 import LocationAutocompleteInput from '../../components/LocationAutocompleteInput';
 import { directoryPlanSortKey } from '../../lib/subscription';
-import { LAWYER_SPECIALTY_OPTIONS } from '../lawyer-onboarding/LawyerOnboardingStep1Screen';
+import { LAWYER_SPECIALTY_OPTIONS } from '../../config/specialties';
+import type { DirectoryLawyer } from '../../types/lawyers';
+
+export type { DirectoryLawyer };
 
 const SPECIALTY_FILTER_OPTIONS = [
   { value: '' as const, label: 'Todas las especialidades' },
   ...LAWYER_SPECIALTY_OPTIONS.map((o) => ({ value: o.id as string, label: o.label })),
 ];
-
-export interface DirectoryLawyer {
-  id: string;
-  full_name: string | null;
-  specialty: string | null;
-  phone: string | null;
-  is_verified: boolean;
-  avatar_url?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  location_label?: string | null;
-  /** premium primero en lista; basic al final tras prueba vencida */
-  plan?: string | null;
-}
 
 export default function LawyerDirectoryTab({
   clientId,

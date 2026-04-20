@@ -19,10 +19,8 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import type { Profile } from '../../types/profile';
-import {
-  LAWYER_SPECIALTY_OPTIONS,
-  type SpecialtyId,
-} from '../lawyer-onboarding/LawyerOnboardingStep1Screen';
+import { LAWYER_SPECIALTY_OPTIONS } from '../../config/specialties';
+import type { SpecialtyId } from '../../types/lawyers';
 import { colors } from '../../theme/colors';
 import LocationAutocompleteInput from '../../components/LocationAutocompleteInput';
 import LawyerSubscriptionCard from '../../components/LawyerSubscriptionCard';

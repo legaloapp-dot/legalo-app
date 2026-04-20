@@ -17,6 +17,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import Logo from '../components/Logo';
 import { supabase } from '../lib/supabase';
 import { colors } from '../theme/colors';
@@ -26,7 +28,7 @@ import ClientPaymentsTab from './client/ClientPaymentsTab';
 import ClientProfileTab from './client/ClientProfileTab';
 import LawyerDirectoryTab from './client/LawyerDirectoryTab';
 import LawyerPaymentScreen from './client/LawyerPaymentScreen';
-import type { DirectoryLawyer } from './client/LawyerDirectoryTab';
+import type { DirectoryLawyer } from '../types/lawyers';
 import CreateCaseScreen, { type CreateCaseLawyer } from './CreateCaseScreen';
 import {
   hasApprovedFeeForLawyer,
@@ -51,6 +53,12 @@ interface ChatMessage {
   time: string;
   caseType?: string;
   showActions?: boolean;
+}
+
+interface AttachmentItem {
+  uri: string;
+  name: string;
+  type: 'image' | 'document';
 }
 
 interface Lawyer {
@@ -120,6 +128,8 @@ export default function ClientChatScreen() {
   const [paymentLawyer, setPaymentLawyer] = useState<DirectoryLawyer | null>(
     null
   );
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const [attachMenuVisible, setAttachMenuVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [clientNotifVisible, setClientNotifVisible] = useState(false);
   const [convListVisible, setConvListVisible] = useState(false);
@@ -217,11 +227,48 @@ export default function ClientChatScreen() {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [chat.messages]);
 
+  const handlePickImage = async () => {
+    setAttachMenuVisible(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: false,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setAttachments((prev) => [
+        ...prev,
+        { uri: asset.uri, name: asset.fileName ?? 'imagen.jpg', type: 'image' },
+      ]);
+    }
+  };
+
+  const handlePickDocument = async () => {
+    setAttachMenuVisible(false);
+    const result = await DocumentPicker.getDocumentAsync({
+      type: '*/*',
+      copyToCacheDirectory: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setAttachments((prev) => [
+        ...prev,
+        { uri: asset.uri, name: asset.name, type: 'document' },
+      ]);
+    }
+  };
+
   const handleSend = () => {
     const text = inputText.trim();
-    if (!text || chat.sending) return;
+    if ((!text && attachments.length === 0) || chat.sending) return;
+    let fullText = text;
+    if (attachments.length > 0) {
+      const list = attachments.map((a) => `📎 ${a.name}`).join('\n');
+      fullText = text ? `${text}\n\n${list}` : list;
+    }
     setInputText('');
-    void chat.sendMessage(text);
+    setAttachments([]);
+    void chat.sendMessage(fullText);
   };
 
   if (paymentLawyer && clientId) {
@@ -713,6 +760,30 @@ export default function ClientChatScreen() {
         {activeTab === 'chat' && (
           <View style={styles.inputWrapper}>
             <View style={styles.inputBar}>
+              {attachments.length > 0 && (
+                <View style={styles.attachmentPreview}>
+                  {attachments.map((att, i) => (
+                    <View key={i} style={styles.attachmentChip}>
+                      <Ionicons
+                        name={att.type === 'image' ? 'image-outline' : 'document-outline'}
+                        size={14}
+                        color={colors.chatSecondary}
+                      />
+                      <Text style={styles.attachmentChipText} numberOfLines={1}>
+                        {att.name}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() =>
+                          setAttachments((prev) => prev.filter((_, j) => j !== i))
+                        }
+                        hitSlop={6}
+                      >
+                        <Ionicons name='close-circle' size={16} color={colors.chatOutline} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
               <TextInput
                 style={styles.input}
                 placeholder='Escriba su consulta legal aquí...'
@@ -723,12 +794,11 @@ export default function ClientChatScreen() {
                 maxLength={500}
               />
               <View style={styles.inputActions}>
-                <TouchableOpacity style={styles.attachButton}>
-                  <Ionicons
-                    name='attach'
-                    size={22}
-                    color={colors.chatOutline}
-                  />
+                <TouchableOpacity
+                  style={styles.attachButton}
+                  onPress={() => setAttachMenuVisible(true)}
+                >
+                  <Ionicons name='attach' size={22} color={colors.chatOutline} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[
@@ -744,6 +814,41 @@ export default function ClientChatScreen() {
             </View>
           </View>
         )}
+
+        {/* Attach Options Sheet */}
+        <Modal
+          visible={attachMenuVisible}
+          animationType='slide'
+          transparent
+          onRequestClose={() => setAttachMenuVisible(false)}
+        >
+          <Pressable
+            style={[StyleSheet.absoluteFill, styles.attachBackdrop]}
+            onPress={() => setAttachMenuVisible(false)}
+          />
+          <View style={styles.attachSheet}>
+            <TouchableOpacity
+              style={styles.attachOption}
+              onPress={() => void handlePickImage()}
+            >
+              <Ionicons name='image-outline' size={22} color={colors.chatSecondary} />
+              <Text style={styles.attachOptionText}>Imagen o foto</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.attachOption}
+              onPress={() => void handlePickDocument()}
+            >
+              <Ionicons name='document-outline' size={22} color={colors.chatSecondary} />
+              <Text style={styles.attachOptionText}>Documento</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.attachCancel}
+              onPress={() => setAttachMenuVisible(false)}
+            >
+              <Text style={styles.attachCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
 
       {clientId ? (
@@ -1287,5 +1392,72 @@ const styles = StyleSheet.create({
     color: colors.error,
     marginTop: 12,
     textAlign: 'center',
+  },
+
+  attachmentPreview: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  attachmentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.chatSecondaryContainer,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 200,
+    borderWidth: 1,
+    borderColor: colors.chatSecondary + '33',
+  },
+  attachmentChipText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.chatSecondary,
+    fontWeight: '600',
+  },
+
+  attachBackdrop: {
+    backgroundColor: '#00000066',
+  },
+  attachSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.chatSurface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 40,
+    gap: 4,
+  },
+  attachOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  attachOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.chatOnSurface,
+  },
+  attachCancel: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: colors.chatOutlineVariant + '33',
+  },
+  attachCancelText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.chatOutline,
   },
 });
