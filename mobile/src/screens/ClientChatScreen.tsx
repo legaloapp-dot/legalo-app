@@ -216,6 +216,11 @@ export default function ClientChatScreen() {
 
   const handlePickImage = async () => {
     setAttachMenuVisible(false);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permisos', 'Necesitamos acceso a tu galería para adjuntar imágenes.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: false,
