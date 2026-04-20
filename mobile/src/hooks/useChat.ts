@@ -26,7 +26,11 @@ function formatTime(date: Date): string {
 }
 
 function cleanCategoryFromText(text: string): string {
-  return text.replace(/\n*CATEGORIA:\s*\[?[^\]]*\]?\s*/gi, '').trim();
+  return text
+    .replace(/```(?:json)?\s*[\s\S]*?```/gi, '')
+    .replace(/^\s*\{[\s\S]*?\}\s*$/gm, '')
+    .replace(/\n*CATEGORIA:\s*\[?[^\]]*\]?\s*/gi, '')
+    .trim();
 }
 
 function rowToChatMessage(row: ConversationMessageRow): ChatMessage {

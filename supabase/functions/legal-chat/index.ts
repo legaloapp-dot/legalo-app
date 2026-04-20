@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        response: text,
+        response: cleanResponseText(text),
         category: category || null,
       }),
       {
@@ -145,6 +145,14 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+function cleanResponseText(text: string): string {
+  return text
+    .replace(/```(?:json)?\s*[\s\S]*?```/gi, '')
+    .replace(/^\s*\{[\s\S]*?\}\s*$/gm, '')
+    .replace(/\n*CATEGORIA:\s*\[?[^\]]*\]?\s*/gi, '')
+    .trim();
+}
 
 function extractCategory(text: string): string | null {
   const categories = ['Laboral', 'Civil', 'Penal', 'Mercantil', 'Administrativo', 'Familia', 'Inmobiliario', 'Inquilinato'];

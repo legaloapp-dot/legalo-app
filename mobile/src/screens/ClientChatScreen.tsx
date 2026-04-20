@@ -322,9 +322,18 @@ export default function ClientChatScreen() {
                 </Text>
               </View>
             )}
-            <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>
-              {msg.content}
-            </Text>
+            {isUser ? (
+              <Text style={[styles.bubbleText, styles.bubbleTextUser]}>
+                {msg.content}
+              </Text>
+            ) : (
+              <ChatMarkdownText
+                baseStyle={styles.bubbleText}
+                boldStyle={{ fontWeight: '700' }}
+              >
+                {msg.content}
+              </ChatMarkdownText>
+            )}
             {msg.showActions && msg.caseType && (
               <View style={styles.actions}>
                 <TouchableOpacity
